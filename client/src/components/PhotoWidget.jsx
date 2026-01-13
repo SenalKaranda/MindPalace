@@ -516,7 +516,7 @@ const PhotoWidget = ({ transparentBackground }) => {
           }}>
             📷 Photos
           </Typography>
-        <Box sx={{ display: 'flex', gap: 'var(--spacing-1)', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
           <IconButton
             onClick={handleNextPhoto}
             size="small"
@@ -528,7 +528,7 @@ const PhotoWidget = ({ transparentBackground }) => {
               border: '1px solid var(--card-border)',
               '&:hover': { 
                 backgroundColor: 'var(--primary)',
-                color: 'white',
+                color: 'var(--text)',
                 transform: 'scale(1.05)',
                 boxShadow: 'var(--elevation-2)'
               },
@@ -540,14 +540,20 @@ const PhotoWidget = ({ transparentBackground }) => {
           <IconButton 
             onClick={handleTogglePlayback} 
             size="small"
+            color={isPlaying ? "primary" : "default"}
             sx={{
-              backgroundColor: isPlaying ? 'var(--primary)' : 'transparent',
-              color: isPlaying ? 'white' : 'var(--text-secondary)',
+              backgroundColor: isPlaying ? 'rgba(var(--primary-rgb), 0.12)' : 'rgba(var(--primary-rgb), 0.12)',
+              color: isPlaying ? 'var(--primary)' : 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              borderRadius: '20px',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
-                backgroundColor: isPlaying ? 'var(--primary)' : 'var(--surface)',
-                opacity: 0.9
-              },
-              transition: 'all 0.2s ease'
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                transform: 'scale(1.05)',
+                boxShadow: 'var(--elevation-2)'
+              }
             }}
           >
             {isPlaying ? <Pause /> : <PlayArrow />}
@@ -557,12 +563,21 @@ const PhotoWidget = ({ transparentBackground }) => {
             size="small" 
             disabled={loading}
             sx={{
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
               color: 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              borderRadius: '20px',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text)'
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                transform: 'scale(1.05)',
+                boxShadow: 'var(--elevation-2)'
               },
-              transition: 'all 0.2s ease'
+              '&:disabled': {
+                opacity: 0.5
+              }
             }}
           >
             <Refresh />

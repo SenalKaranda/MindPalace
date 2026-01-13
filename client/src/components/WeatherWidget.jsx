@@ -204,7 +204,7 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
       4: { label: 'Poor', color: '#ff0000', emoji: '😨' },
       5: { label: 'Very Poor', color: '#8f3f97', emoji: '🤢' }
     };
-    return levels[aqi] || { label: 'Unknown', color: '#gray', emoji: '❓' };
+    return levels[aqi] || { label: 'Unknown', color: 'var(--text-secondary)', emoji: '❓' };
   };
 
   // Zip code is now managed in Admin Panel
@@ -304,10 +304,10 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
                 {getWeatherIcon(day.weather.icon)}
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, minWidth: 80, justifyContent: 'flex-end' }}>
-                <Typography variant="body2" sx={{ color: 'var(--light-gradient-end)', fontWeight: 'bold' }}>
+                <Typography variant="body2" sx={{ color: 'var(--gradient-end)', fontWeight: 'bold' }}>
                   {day.tempHigh}°
                 </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--light-gradient-start)' }}>
+                <Typography variant="body2" sx={{ color: 'var(--gradient-start)' }}>
                   {day.tempLow}°
                 </Typography>
               </Box>
@@ -448,10 +448,10 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
                   {/* Bottom Row: Temps (left) and Weather (right) */}
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
                     <Box sx={{ textAlign: 'left' }}>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'var(--light-gradient-end)' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'var(--gradient-end)' }}>
                         {day.tempHigh}°F
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'var(--light-gradient-start)' }}>
+                      <Typography variant="body2" sx={{ color: 'var(--gradient-start)' }}>
                         {day.tempLow}°F
                       </Typography>
                     </Box>
@@ -476,6 +476,19 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
                 size="small"
                 variant={chartType === 'temperature' ? 'contained' : 'outlined'}
                 onClick={() => setChartType('temperature')}
+                sx={{
+                  backgroundColor: chartType === 'temperature' ? 'rgba(var(--primary-rgb), 0.12)' : 'rgba(var(--primary-rgb), 0.12)',
+                  color: chartType === 'temperature' ? 'var(--primary)' : 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  }
+                }}
               >
                 🌡️
               </Button>
@@ -483,6 +496,19 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
                 size="small"
                 variant={chartType === 'precipitation' ? 'contained' : 'outlined'}
                 onClick={() => setChartType('precipitation')}
+                sx={{
+                  backgroundColor: chartType === 'precipitation' ? 'rgba(var(--primary-rgb), 0.12)' : 'rgba(var(--primary-rgb), 0.12)',
+                  color: chartType === 'precipitation' ? 'var(--primary)' : 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  }
+                }}
               >
                 🌧️
               </Button>

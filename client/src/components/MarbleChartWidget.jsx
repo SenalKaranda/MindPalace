@@ -205,7 +205,7 @@ const MarbleChartWidget = ({ transparentBackground }) => {
                   <Avatar
                     sx={{
                       bgcolor: 'var(--secondary)',
-                      color: 'white',
+                      color: 'var(--text)',
                       mr: 2,
                       width: 40,
                       height: 40
@@ -311,18 +311,18 @@ const MarbleChartWidget = ({ transparentBackground }) => {
                                 fontSize: '0.7rem',
                                 height: 20,
                                 backgroundColor: entry.change_type === 'earned' ? 'var(--success)' : 'var(--error)',
-                                color: 'white'
+                                color: 'var(--text)'
                               }}
                             />
                           </Box>
                         }
                         secondary={
-                          <Box>
-                            <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                          <Box component="span" sx={{ display: 'block' }}>
+                            <Typography component="span" variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block' }}>
                               {moment(entry.created_at).format('MMM D, YYYY h:mm A')}
                             </Typography>
                             {entry.reason && (
-                              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mt: 0.5 }}>
+                              <Typography component="span" variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mt: 0.5 }}>
                                 {entry.reason}
                               </Typography>
                             )}

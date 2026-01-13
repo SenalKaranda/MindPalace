@@ -260,14 +260,20 @@ const TodoWidget = ({ transparentBackground }) => {
             onClick={handleAddTodo}
             disabled={defaultCalendarError}
             sx={{
-              backgroundColor: 'var(--secondary)',
-              color: 'white',
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
-                backgroundColor: 'var(--secondary)',
-                opacity: 0.9
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                borderColor: 'var(--primary)',
+                boxShadow: 'var(--elevation-2)'
               },
               '&:disabled': {
-                backgroundColor: 'var(--text-secondary)',
+                backgroundColor: 'var(--card-border)',
+                color: 'var(--text-secondary)',
                 opacity: 0.5
               }
             }}
@@ -285,7 +291,7 @@ const TodoWidget = ({ transparentBackground }) => {
               color: 'var(--text-secondary)',
               '&:hover': {
                 backgroundColor: 'var(--secondary)',
-                color: 'white'
+                color: 'var(--text)'
               }
             }}
           >
@@ -308,7 +314,7 @@ const TodoWidget = ({ transparentBackground }) => {
               color: 'var(--text-secondary)',
               '&:hover': {
                 backgroundColor: 'var(--secondary)',
-                color: 'white'
+                color: 'var(--text)'
               }
             }}
           >
@@ -322,7 +328,7 @@ const TodoWidget = ({ transparentBackground }) => {
             sx={{ 
               mt: 1,
               backgroundColor: 'var(--secondary)',
-              color: 'white',
+              color: 'var(--text)',
               fontWeight: 'bold',
               fontSize: '0.75rem'
             }} 
@@ -391,14 +397,14 @@ const TodoWidget = ({ transparentBackground }) => {
                       </Box>
                     }
                     secondary={
-                      <Box sx={{ mt: 0.5 }}>
+                      <Box component="span" sx={{ mt: 0.5, display: 'block' }}>
                         {todo.description && (
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography component="span" variant="body2" color="text.secondary" sx={{ display: 'block' }}>
                             {todo.description}
                           </Typography>
                         )}
                         {todo.due && (
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                             Due: {moment(todo.due).format('h:mm A')}
                           </Typography>
                         )}
@@ -412,13 +418,6 @@ const TodoWidget = ({ transparentBackground }) => {
                         e.stopPropagation();
                         handleEditTodo(todo);
                       }}
-                      sx={{
-                        color: 'var(--text-secondary)',
-                        '&:hover': {
-                          backgroundColor: 'var(--secondary)',
-                          color: 'white'
-                        }
-                      }}
                     >
                       <Edit fontSize="small" />
                     </IconButton>
@@ -428,14 +427,7 @@ const TodoWidget = ({ transparentBackground }) => {
                         e.stopPropagation();
                         handleDeleteTodo(todo);
                       }}
-                      sx={{
-                        color: 'var(--error)',
-                        '&:hover': {
-                          backgroundColor: 'var(--error)',
-                          color: 'white',
-                          opacity: 0.9
-                        }
-                      }}
+                      color="error"
                     >
                       <Delete fontSize="small" />
                     </IconButton>
@@ -452,11 +444,18 @@ const TodoWidget = ({ transparentBackground }) => {
         onClose={() => setShowTodoDialog(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ color: 'var(--text)' }}>
           {editingTodo ? 'Edit Todo' : 'Add Todo'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ color: 'var(--text)' }}>
           <Box sx={{ pt: 2 }}>
             <TextField
               fullWidth
@@ -517,7 +516,7 @@ const TodoWidget = ({ transparentBackground }) => {
             disabled={savingTodo || !todoForm.summary}
             sx={{
               backgroundColor: 'var(--secondary)',
-              color: 'white',
+              color: 'var(--text)',
               '&:hover': {
                 backgroundColor: 'var(--secondary)',
                 opacity: 0.9
@@ -548,7 +547,7 @@ const TodoWidget = ({ transparentBackground }) => {
           bottom: { xs: 16, sm: 24 },
           '& .MuiSnackbarContent-root': {
             backgroundColor: 'var(--secondary)',
-            color: 'white',
+            color: 'var(--text)',
             borderRadius: 'var(--border-radius-medium)',
             boxShadow: 'var(--elevation-3)',
             minWidth: 'auto',
@@ -571,7 +570,7 @@ const TodoWidget = ({ transparentBackground }) => {
             onClick={handleUndo}
             sx={{ 
               ml: 2,
-              backgroundColor: 'white', 
+              backgroundColor: 'var(--card-bg)', 
               color: 'var(--secondary)', 
               fontWeight: 'bold',
               '&:hover': { 

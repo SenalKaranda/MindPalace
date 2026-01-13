@@ -21,8 +21,8 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
   const [viewMode, setViewMode] = useState('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [eventColors, setEventColors] = useState({
-    backgroundColor: '#6e44ff',
-    textColor: '#ffffff'
+    backgroundColor: 'var(--primary)',
+    textColor: 'var(--text)'
   });
   const [displaySettings, setDisplaySettings] = useState({
     textSize: 12,
@@ -44,8 +44,8 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
       const response = await axios.get(`${getApiUrl()}/api/settings`);
       const settings = response.data;
       setEventColors({
-        backgroundColor: settings.CALENDAR_EVENT_BACKGROUND_COLOR || '#6e44ff',
-        textColor: settings.CALENDAR_EVENT_TEXT_COLOR || '#ffffff'
+        backgroundColor: settings.CALENDAR_EVENT_BACKGROUND_COLOR || 'var(--primary)',
+        textColor: settings.CALENDAR_EVENT_TEXT_COLOR || 'var(--text)'
       });
       setDisplaySettings({
         textSize: parseInt(settings.CALENDAR_TEXT_SIZE || '12'),
@@ -506,7 +506,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
               <IconButton
                 onClick={handlePreviousPeriod}
                 size="small"
-                sx={{ color: 'var(--text-color)' }}
+                sx={{ color: 'var(--text)' }}
                 aria-label="Previous period"
               >
                 <ChevronLeft />
@@ -525,7 +525,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
               <IconButton
                 onClick={handleNextPeriod}
                 size="small"
-                sx={{ color: 'var(--text-color)' }}
+                sx={{ color: 'var(--text)' }}
                 aria-label="Next period"
               >
                 <ChevronRight />
@@ -583,7 +583,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                         width: 12,
                         height: 12,
                         borderRadius: '50%',
-                        backgroundColor: source.color || '#6e44ff',
+                        backgroundColor: source.color || 'var(--primary)',
                         border: '1px solid var(--card-border)',
                         flexShrink: 0
                       }}
@@ -607,7 +607,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
       
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
         {error && (
-          <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255, 0, 0, 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(var(--error-rgb), 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
             <Typography color="error" variant="body2">
               {error}
             </Typography>
@@ -649,7 +649,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                       bgcolor: isCurrentMonth ? 'rgba(var(--primary-rgb), 0.1)' : 'transparent',
                       transition: 'all 0.2s ease',
                       '&:hover': {
-                        bgcolor: isCurrentMonth ? 'rgba(var(--primary-rgb), 0.15)' : 'rgba(0, 0, 0, 0.05)',
+                        bgcolor: isCurrentMonth ? 'rgba(var(--primary-rgb), 0.15)' : 'rgba(var(--background-rgb, 0, 0, 0), 0.05)',
                         transform: 'translateY(-2px)',
                         boxShadow: 'var(--elevation-1)'
                       }
@@ -713,7 +713,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                               justifyContent: 'center',
                               borderRadius: 'var(--border-radius-small)',
                               bgcolor: isToday ? 'var(--primary)' : 'transparent',
-                              color: isToday ? 'white' : 'inherit',
+                              color: isToday ? 'var(--text)' : 'inherit',
                               fontSize: 'clamp(0.6rem, 1.2vw, 0.75rem)',
                               fontWeight: isToday ? 'bold' : 'normal',
                               position: 'relative'
@@ -730,7 +730,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                                   width: 4,
                                   height: 4,
                                   borderRadius: '50%',
-                                  bgcolor: isToday ? 'white' : (dayEvents[0].source_color || eventColors.backgroundColor)
+                                  bgcolor: isToday ? 'var(--text)' : (dayEvents[0].source_color || eventColors.backgroundColor)
                                 }}
                               />
                             )}
@@ -805,7 +805,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                     minHeight: 0,
                     overflow: 'hidden',
                     '&:hover': {
-                      bgcolor: isToday ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(0, 0, 0, 0.05)'
+                      bgcolor: isToday ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(var(--background-rgb, 0, 0, 0), 0.05)'
                     }
                   }}
                 >
@@ -860,7 +860,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                             minWidth: `clamp(6px, 1.2vw, ${displaySettings.bulletSize}px)`,
                             minHeight: `clamp(6px, 1.2vw, ${displaySettings.bulletSize}px)`,
                             borderRadius: '50%',
-                            backgroundColor: '#ffffff',
+                            backgroundColor: 'var(--card-bg)',
                             flexShrink: 0,
                             border: `1px solid ${event.source_color || eventColors.backgroundColor}`
                           }}
@@ -869,7 +869,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                           variant="caption"
                           sx={{
                             fontSize: `clamp(0.65rem, 1.3vw, ${Math.max(10, displaySettings.textSize)}px)`,
-                            color: '#ffffff',
+                            color: 'var(--text)',
                             fontWeight: 500,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -956,7 +956,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                           gap: 0.5,
                           minHeight: '36px',
                           '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.05)'
+                            backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.05)'
                           }
                         }}
                       >
@@ -1247,7 +1247,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
                                     p: 1,
                                     borderRadius: 'var(--border-radius-small)',
                                     bgcolor: event.source_color || eventColors.backgroundColor,
-                                    color: '#ffffff',
+                                    color: 'var(--text)',
                                     cursor: 'pointer',
                                     boxShadow: 'var(--elevation-1)',
                                     transition: 'all 0.2s ease',
@@ -1316,15 +1316,22 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
         onClose={() => setShowDayModal(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ color: 'var(--text)' }}>
           {selectedDate && (
-            <Typography variant="h6" component="span">
+            <Typography variant="h6" component="span" sx={{ color: 'var(--text)' }}>
               📅 {moment(selectedDate).format('dddd, MMMM D, YYYY')}
             </Typography>
           )}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ color: 'var(--text)' }}>
           {selectedDateEvents.length === 0 ? (
             <Typography variant="body1" color="text.secondary" sx={{ py: 2 }}>
               No events scheduled for this day.

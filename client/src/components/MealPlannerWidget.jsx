@@ -404,7 +404,19 @@ const MealPlannerWidget = ({ transparentBackground }) => {
                 variant="contained"
                 startIcon={<Add />}
                 onClick={handleAddMeal}
-                sx={{ bgcolor: 'var(--primary)' }}
+                sx={{ 
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  }
+                }}
               >
                 Add Meal
               </Button>
@@ -414,7 +426,7 @@ const MealPlannerWidget = ({ transparentBackground }) => {
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
           {error && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255, 0, 0, 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(var(--error-rgb), 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
               <Typography color="error" variant="body2">
                 {error}
               </Typography>
@@ -543,7 +555,7 @@ const MealPlannerWidget = ({ transparentBackground }) => {
                               size="small"
                               sx={{
                                 bgcolor: 'var(--primary)',
-                                color: 'white',
+                                color: 'var(--text)',
                                 fontSize: 'clamp(0.6rem, 1vw, 0.7rem)',
                                 height: 20,
                                 mb: 0.5
@@ -602,9 +614,16 @@ const MealPlannerWidget = ({ transparentBackground }) => {
         onClose={() => setShowMealDialog(false)} 
         maxWidth="md" 
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
       >
-        <DialogTitle>{editingMeal ? 'Edit Meal' : 'Add Meal'}</DialogTitle>
-        <DialogContent sx={{ p: 2 }}>
+        <DialogTitle sx={{ color: 'var(--text)' }}>{editingMeal ? 'Edit Meal' : 'Add Meal'}</DialogTitle>
+        <DialogContent sx={{ p: 2, color: 'var(--text)' }}>
           <TextField
             fullWidth
             label="Title"
@@ -786,7 +805,7 @@ const MealPlannerWidget = ({ transparentBackground }) => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setShowMealDialog(false)}>Cancel</Button>
+          <Button onClick={() => setShowMealDialog(false)} sx={{ color: 'var(--text-secondary)' }}>Cancel</Button>
           <Button 
             variant="contained" 
             onClick={handleSaveMeal}
@@ -830,7 +849,7 @@ const MealPlannerWidget = ({ transparentBackground }) => {
               disabled={!pinInput}
               sx={{
                 bgcolor: 'var(--primary)',
-                color: 'white',
+                color: 'var(--text)',
                 '&:hover': {
                   bgcolor: 'var(--primary)',
                   opacity: 0.9

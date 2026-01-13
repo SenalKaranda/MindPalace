@@ -380,11 +380,16 @@ const AlarmWidget = ({ transparentBackground }) => {
             startIcon={<Add />}
             onClick={handleAddAlarm}
             sx={{
-              backgroundColor: 'var(--primary)',
-              color: 'white',
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
-                backgroundColor: 'var(--primary)',
-                opacity: 0.9
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                borderColor: 'var(--primary)',
+                boxShadow: 'var(--elevation-2)'
               }
             }}
           >
@@ -451,16 +456,16 @@ const AlarmWidget = ({ transparentBackground }) => {
                       </Box>
                     }
                     secondary={
-                      <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        <Typography variant="body2" sx={{ color: isTriggered ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)' }}>
+                      <Box component="span" sx={{ mt: 0.5, display: 'block' }}>
+                        <Typography component="span" variant="body2" sx={{ color: isTriggered ? 'rgba(var(--text-rgb), 0.9)' : 'var(--text-secondary)', display: 'block' }}>
                           Time: {moment(alarm.time, 'HH:mm').format('h:mm A')}
                         </Typography>
                         {alarm.enabled && (
-                          <Typography variant="caption" sx={{ color: isTriggered ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}>
+                          <Typography component="span" variant="caption" sx={{ color: isTriggered ? 'rgba(var(--text-rgb), 0.8)' : 'var(--text-secondary)', display: 'block' }}>
                             Next: {getNextAlarmTime(alarm)}
                           </Typography>
                         )}
-                        <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                        <Box component="span" sx={{ display: 'inline-flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
                           {alarm.sound_enabled && (
                             <VolumeUp sx={{ fontSize: 14, color: isTriggered ? 'white' : 'var(--text-secondary)' }} />
                           )}
@@ -478,40 +483,20 @@ const AlarmWidget = ({ transparentBackground }) => {
                     <IconButton
                       size="small"
                       onClick={() => handleToggleAlarm(alarm)}
-                      sx={{
-                        color: alarm.enabled ? 'var(--primary)' : 'var(--text-secondary)',
-                        '&:hover': {
-                          backgroundColor: 'var(--primary)',
-                          color: 'white'
-                        }
-                      }}
+                      color={alarm.enabled ? "primary" : "default"}
                     >
                       <Alarm fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
                       onClick={() => handleEditAlarm(alarm)}
-                      sx={{
-                        color: 'var(--text-secondary)',
-                        '&:hover': {
-                          backgroundColor: 'var(--primary)',
-                          color: 'white'
-                        }
-                      }}
                     >
                       <Edit fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
                       onClick={() => handleDeleteAlarm(alarm)}
-                      sx={{
-                        color: 'var(--error)',
-                        '&:hover': {
-                          backgroundColor: 'var(--error)',
-                          color: 'white',
-                          opacity: 0.9
-                        }
-                      }}
+                      color="error"
                     >
                       <Delete fontSize="small" />
                     </IconButton>
@@ -529,11 +514,18 @@ const AlarmWidget = ({ transparentBackground }) => {
         onClose={() => setShowAlarmDialog(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ color: 'var(--text)' }}>
           {editingAlarm ? 'Edit Alarm' : 'Add Alarm'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ color: 'var(--text)' }}>
           <Box sx={{ pt: 2 }}>
             <TextField
               fullWidth
@@ -641,7 +633,7 @@ const AlarmWidget = ({ transparentBackground }) => {
             disabled={savingAlarm || !alarmForm.title || !alarmForm.time}
             sx={{
               backgroundColor: 'var(--primary)',
-              color: 'white',
+              color: 'var(--text)',
               '&:hover': {
                 backgroundColor: 'var(--primary)',
                 opacity: 0.9

@@ -21,6 +21,8 @@ import { Add, Delete, Edit, ExpandMore, ExpandLess } from '@mui/icons-material';
 import axios from 'axios';
 import { getApiUrl } from '../utils/api.js';
 import moment from 'moment';
+import ConfirmationDialog from './ConfirmationDialog';
+import AlertSnackbar from './AlertSnackbar';
 
 const NotesWidget = ({ transparentBackground }) => {
   const [notes, setNotes] = useState([]);
@@ -35,6 +37,8 @@ const NotesWidget = ({ transparentBackground }) => {
   const [savingNote, setSavingNote] = useState(false);
   const [expandedNotes, setExpandedNotes] = useState(new Set());
   const [defaultCalendarError, setDefaultCalendarError] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, message: '', onConfirm: () => {} });
+  const [alertSnackbar, setAlertSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
   useEffect(() => {
     fetchNotes();
@@ -92,20 +96,25 @@ const NotesWidget = ({ transparentBackground }) => {
   };
 
   const handleDeleteNote = async (note) => {
-    if (!window.confirm('Are you sure you want to delete this note?')) return;
-    
-    try {
-      await axios.delete(`${getApiUrl()}/api/caldav/notes/${note.uid}`);
-      await fetchNotes();
-    } catch (error) {
-      console.error('Error deleting note:', error);
-      alert('Failed to delete note. Please try again.');
-    }
+    setConfirmDialog({
+      open: true,
+      message: 'Are you sure you want to delete this note?',
+      onConfirm: async () => {
+        try {
+          await axios.delete(`${getApiUrl()}/api/caldav/notes/${note.uid}`);
+          await fetchNotes();
+          setAlertSnackbar({ open: true, message: 'Note deleted successfully', severity: 'success' });
+        } catch (error) {
+          console.error('Error deleting note:', error);
+          setAlertSnackbar({ open: true, message: 'Failed to delete note. Please try again.', severity: 'error' });
+        }
+      }
+    });
   };
 
   const handleSaveNote = async () => {
     if (!noteForm.summary) {
-      alert('Please enter a note title.');
+      setAlertSnackbar({ open: true, message: 'Please enter a note title.', severity: 'warning' });
       return;
     }
     
@@ -127,9 +136,9 @@ const NotesWidget = ({ transparentBackground }) => {
     } catch (error) {
       console.error('Error saving note:', error);
       if (error.response?.status === 400 && error.response?.data?.error?.includes('default calendar')) {
-        alert('No default calendar set. Please set a default calendar in Admin Panel.');
+        setAlertSnackbar({ open: true, message: 'No default calendar set. Please set a default calendar in Admin Panel.', severity: 'warning' });
       } else {
-        alert('Failed to save note. Please try again.');
+        setAlertSnackbar({ open: true, message: 'Failed to save note. Please try again.', severity: 'error' });
       }
     } finally {
       setSavingNote(false);
@@ -152,6 +161,7 @@ const NotesWidget = ({ transparentBackground }) => {
   };
 
   return (
+    <>
     <Card
       sx={{
         height: '100%',
@@ -187,14 +197,20 @@ const NotesWidget = ({ transparentBackground }) => {
             onClick={handleAddNote}
             disabled={defaultCalendarError}
             sx={{
-              backgroundColor: 'var(--accent)',
-              color: 'white',
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:hover': {
-                backgroundColor: 'var(--accent)',
-                opacity: 0.9
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                borderColor: 'var(--primary)',
+                boxShadow: 'var(--elevation-2)'
               },
               '&:disabled': {
-                backgroundColor: 'var(--text-secondary)',
+                backgroundColor: 'var(--card-border)',
+                color: 'var(--text-secondary)',
                 opacity: 0.5
               }
             }}
@@ -309,27 +325,13 @@ const NotesWidget = ({ transparentBackground }) => {
                       <IconButton
                         size="small"
                         onClick={() => handleEditNote(note)}
-                        sx={{
-                          color: 'var(--text-secondary)',
-                          '&:hover': {
-                            backgroundColor: 'var(--accent)',
-                            color: 'white'
-                          }
-                        }}
                       >
                         <Edit fontSize="small" />
                       </IconButton>
                       <IconButton
                         size="small"
                         onClick={() => handleDeleteNote(note)}
-                        sx={{
-                          color: 'var(--error)',
-                          '&:hover': {
-                            backgroundColor: 'var(--error)',
-                            color: 'white',
-                            opacity: 0.9
-                          }
-                        }}
+                        color="error"
                       >
                         <Delete fontSize="small" />
                       </IconButton>
@@ -348,11 +350,18 @@ const NotesWidget = ({ transparentBackground }) => {
         onClose={() => setShowNoteDialog(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ color: 'var(--text)' }}>
           {editingNote ? 'Edit Note' : 'Add Note'}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ color: 'var(--text)' }}>
           <Box sx={{ pt: 2 }}>
             <TextField
               fullWidth
@@ -387,7 +396,7 @@ const NotesWidget = ({ transparentBackground }) => {
             disabled={savingNote || !noteForm.summary}
             sx={{
               backgroundColor: 'var(--accent)',
-              color: 'white',
+              color: 'var(--text)',
               '&:hover': {
                 backgroundColor: 'var(--accent)',
                 opacity: 0.9
@@ -403,6 +412,25 @@ const NotesWidget = ({ transparentBackground }) => {
         </DialogActions>
       </Dialog>
     </Card>
+
+    <ConfirmationDialog
+      open={confirmDialog.open}
+      onClose={() => setConfirmDialog({ open: false, message: '', onConfirm: () => {} })}
+      onConfirm={confirmDialog.onConfirm}
+      title="Delete Note"
+      message={confirmDialog.message}
+      confirmText="Delete"
+      cancelText="Cancel"
+      severity="warning"
+    />
+
+    <AlertSnackbar
+      open={alertSnackbar.open}
+      onClose={() => setAlertSnackbar({ open: false, message: '', severity: 'info' })}
+      message={alertSnackbar.message}
+      severity={alertSnackbar.severity}
+    />
+    </>
   );
 };
 

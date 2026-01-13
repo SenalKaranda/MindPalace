@@ -1,6 +1,6 @@
 // client/src/app.jsx
 import React, { useState, useEffect } from 'react';
-import { Container, IconButton, Box, Dialog, DialogContent, Typography } from '@mui/material';
+import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip } from '@mui/material';
 import { Brightness4, Brightness7, Lock, LockOpen } from '@mui/icons-material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -52,13 +52,13 @@ class ErrorBoundary extends React.Component {
           gap: 2,
           p: 4
         }}>
-          <Typography variant="h5" sx={{ color: 'var(--error-color, #ff4444)' }}>
+          <Typography variant="h5" sx={{ color: 'var(--error)' }}>
             Something went wrong
           </Typography>
-          <Typography variant="body1" sx={{ color: 'var(--text-color)' }}>
+          <Typography variant="body1" sx={{ color: 'var(--text)' }}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </Typography>
-          <Typography variant="body2" sx={{ color: 'var(--text-color)', opacity: 0.7, mt: 2 }}>
+          <Typography variant="body2" sx={{ color: 'var(--text)', opacity: 0.7, mt: 2 }}>
             Check the browser console for more details
           </Typography>
           <button 
@@ -169,14 +169,36 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    // Theme is already applied in main.jsx, but we need to sync React state
     const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    setTheme(savedTheme);
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    const currentDataTheme = document.documentElement.getAttribute('data-theme');
+    
+    // Only re-apply if theme changed or wasn't set
+    if (currentDataTheme !== savedTheme) {
+      console.log('[App] Theme mismatch detected, re-applying theme');
+      setTheme(savedTheme);
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      const themeSettings = loadThemeSettings();
+      applyThemeSettings(themeSettings, savedTheme);
+    } else {
+      console.log('[App] Theme already applied, syncing React state only');
+      setTheme(savedTheme);
+    }
+    
     setCurrentGeoPatternSeed(Math.random().toString());
     
-    // Load and apply theme settings
-    const themeSettings = loadThemeSettings();
-    applyThemeSettings(themeSettings, savedTheme);
+    // Listen for theme updates from AdminPanel
+    const handleThemeUpdate = (event) => {
+      console.log('[App] Theme updated event received', event.detail);
+      const { theme: updatedTheme, settings } = event.detail;
+      if (updatedTheme === savedTheme) {
+        // Re-apply theme settings if they changed
+        applyThemeSettings(settings, updatedTheme, false);
+      }
+    };
+    
+    window.addEventListener('themeUpdated', handleThemeUpdate);
+    return () => window.removeEventListener('themeUpdated', handleThemeUpdate);
   }, []);
 
   useEffect(() => {
@@ -578,10 +600,10 @@ const App = () => {
             flexDirection: 'column',
             gap: 2
           }}>
-            <Typography variant="h6" sx={{ color: 'var(--text-color)' }}>
+            <Typography variant="h6" sx={{ color: 'var(--text)' }}>
               No widgets enabled
             </Typography>
-            <Typography variant="body2" sx={{ color: 'var(--text-color)', opacity: 0.7 }}>
+            <Typography variant="body2" sx={{ color: 'var(--text)', opacity: 0.7 }}>
               Enable widgets in the Admin Panel to get started
             </Typography>
           </Box>
@@ -619,7 +641,7 @@ const App = () => {
         }}
         BackdropProps={{
           sx: {
-            backgroundColor: 'rgba(0, 0, 0, 0.5)'
+            backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.5)'
           }
         }}
       >
@@ -652,92 +674,181 @@ const App = () => {
           left: 0,
           right: 0,
           width: '100%',
-          height: '56px', // MD3 standard (was 50px, CSS variable is 56px)
+          height: '56px',
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'center',
           alignItems: 'center',
-          padding: '0 24px', // Increased from 20px for better icon spacing
+          padding: '0 8px',
           backgroundColor: 'var(--bottom-bar-bg)',
           borderTop: '1px solid var(--card-border)',
-          backdropFilter: 'blur(12px)', // Improved blur (was var(--backdrop-blur))
-          boxShadow: 'var(--elevation-2)', // MD3 elevation level 2
+          backdropFilter: 'blur(12px)',
+          boxShadow: 'var(--elevation-2)',
           zIndex: 1000,
+          animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          '@keyframes slideUp': {
+            '0%': {
+              transform: 'translateY(100%)',
+              opacity: 0,
+            },
+            '100%': {
+              transform: 'translateY(0)',
+              opacity: 1,
+            },
+          },
         }}
       >
-        {/* Left: Logo */}
-        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          <img 
-            src={`/${apiKeys.LOGO_FILENAME || 'MindPalaceMobileLogo.png'}`}
-            alt="MindPalace Logo" 
-            style={{ 
-              height: '40px',
-              width: 'auto',
-              objectFit: 'contain'
-            }} 
-            onError={(e) => {
-              // Fallback to default if logo file doesn't exist
-              if (e.target.src !== `/${apiKeys.LOGO_FILENAME || 'MindPalaceMobileLogo.png'}`) {
-                e.target.src = '/MindPalaceMobileLogo.png';
-              }
-            }}
-          />
-        </Box>
-
-        {/* Center: Control Buttons */}
+        {/* Centered Button Group */}
         <Box sx={{ 
           display: 'flex', 
-          gap: 1.5, // Increased from 1 (8px) to 1.5 (12px) for better spacing
+          gap: 1, // 8px gap between buttons
           alignItems: 'center',
-          position: 'absolute',
-          left: '50%',
-          transform: 'translateX(-50%)'
+          justifyContent: 'center',
         }}>
-          <IconButton
-            onClick={toggleTheme}
-            aria-label="Toggle theme"
-            sx={{
-              color: theme === 'light' ? 'action.active' : 'white',
-            }}
-          >
-            {theme === 'light' ? <Brightness4 /> : <Brightness7 />}
-          </IconButton>
+          {/* Theme Toggle Button */}
+          <Tooltip title="Toggle theme" arrow>
+            <IconButton
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '20px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                  transform: 'scale(1.05)',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
+            >
+              {theme === 'light' ? <Brightness4 /> : <Brightness7 />}
+            </IconButton>
+          </Tooltip>
 
-          <IconButton
-            onClick={toggleWidgetsLock}
-            aria-label={widgetsLocked ? "Unlock widgets" : "Lock widgets"}
-            sx={{
-              color: widgetsLocked 
-                ? (theme === 'light' ? 'action.active' : 'white')
-                : 'var(--accent)',
-              transition: 'color 0.2s ease',
-            }}
-          >
-            {widgetsLocked ? <Lock /> : <LockOpen />}
-          </IconButton>
+          {/* Lock/Unlock Button */}
+          <Tooltip title={widgetsLocked ? "Unlock widgets" : "Lock widgets"} arrow>
+            <IconButton
+              onClick={toggleWidgetsLock}
+              aria-label={widgetsLocked ? "Unlock widgets" : "Lock widgets"}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '20px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                  transform: 'scale(1.05)',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
+            >
+              {widgetsLocked ? <Lock /> : <LockOpen />}
+            </IconButton>
+          </Tooltip>
 
-          <IconButton
-            onClick={toggleAdminPanel}
-            aria-label="Toggle Admin Panel"
-            sx={{
-              color: theme === 'light' ? 'action.active' : 'white',
-            }}
-          >
-            <SettingsIcon />
-          </IconButton>
+          {/* Logo Button - Center Focal Point */}
+          <Tooltip title="MindPalace Home" arrow>
+            <IconButton
+              onClick={() => {
+                // Could open Widget Gallery or scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              aria-label="MindPalace Home"
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: '24px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                color: 'var(--primary)',
+                backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                boxShadow: 'var(--elevation-1)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.16)',
+                  transform: 'scale(1.08)',
+                  boxShadow: 'var(--elevation-2)',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
+            >
+              <img 
+                src={`/${apiKeys.LOGO_FILENAME || 'MindPalaceMobileLogo.png'}`}
+                alt="MindPalace Logo" 
+                style={{ 
+                  height: '28px',
+                  width: 'auto',
+                  objectFit: 'contain'
+                }} 
+                onError={(e) => {
+                  if (e.target.src !== `/${apiKeys.LOGO_FILENAME || 'MindPalaceMobileLogo.png'}`) {
+                    e.target.src = '/MindPalaceMobileLogo.png';
+                  }
+                }}
+              />
+            </IconButton>
+          </Tooltip>
 
-          <IconButton
-            onClick={handlePageRefresh}
-            aria-label="Refresh Page"
-            sx={{
-              color: theme === 'light' ? 'action.active' : 'white',
-            }}
-          >
-            <RefreshIcon />
-          </IconButton>
+          {/* Admin Panel Button */}
+          <Tooltip title="Admin Panel" arrow>
+            <IconButton
+              onClick={toggleAdminPanel}
+              aria-label="Toggle Admin Panel"
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '20px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                color: showAdminPanel ? 'var(--primary)' : 'var(--text-secondary)',
+                backgroundColor: showAdminPanel ? 'rgba(var(--primary-rgb), 0.12)' : 'transparent',
+                '&:hover': {
+                  backgroundColor: showAdminPanel 
+                    ? 'rgba(var(--primary-rgb), 0.16)' 
+                    : 'rgba(var(--primary-rgb), 0.08)',
+                  transform: 'scale(1.05)',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
+            >
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+
+          {/* Refresh Button */}
+          <Tooltip title="Refresh page" arrow>
+            <IconButton
+              onClick={handlePageRefresh}
+              aria-label="Refresh Page"
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '20px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                  transform: 'scale(1.05)',
+                },
+                '&:active': {
+                  transform: 'scale(0.95)',
+                },
+              }}
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
-
-        {/* Right: Empty space for balance */}
-        <Box sx={{ width: '50px' }} />
       </Box>
     </ErrorBoundary>
   );

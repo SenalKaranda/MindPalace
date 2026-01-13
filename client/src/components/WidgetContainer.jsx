@@ -673,7 +673,7 @@ const WidgetContainer = ({ children, widgets = [], locked = true, onLayoutChange
             } catch (error) {
               console.error(`Error rendering widget ${widget?.id}:`, error);
               return (
-                <Box key={widget?.id || 'error'} sx={{ p: 2, color: 'var(--error-color, #ff4444)' }}>
+                <Box key={widget?.id || 'error'} sx={{ p: 2, color: 'var(--error)' }}>
                   Error rendering widget: {error.message}
                 </Box>
               );

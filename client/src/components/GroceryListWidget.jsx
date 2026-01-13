@@ -25,6 +25,8 @@ import {
 import { Add, Delete, CheckCircle, ClearAll } from '@mui/icons-material';
 import axios from 'axios';
 import { getApiUrl } from '../utils/api.js';
+import ConfirmationDialog from './ConfirmationDialog';
+import AlertSnackbar from './AlertSnackbar';
 
 const GroceryListWidget = ({ transparentBackground }) => {
   const [groceryItems, setGroceryItems] = useState([]);
@@ -46,6 +48,8 @@ const GroceryListWidget = ({ transparentBackground }) => {
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, message: '', onConfirm: () => {} });
+  const [alertSnackbar, setAlertSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
   useEffect(() => {
     fetchUsers();
@@ -126,9 +130,10 @@ const GroceryListWidget = ({ transparentBackground }) => {
       setNewItem({ name: '', quantity: '', unit: '' });
       setShowAddDialog(false);
       fetchGroceryItems();
+      setAlertSnackbar({ open: true, message: 'Grocery item added successfully', severity: 'success' });
     } catch (error) {
       console.error('Error adding grocery item:', error);
-      alert('Failed to add grocery item');
+      setAlertSnackbar({ open: true, message: 'Failed to add grocery item', severity: 'error' });
     }
   };
 
@@ -143,9 +148,9 @@ const GroceryListWidget = ({ transparentBackground }) => {
     } catch (error) {
       console.error('Error checking item:', error);
       if (error.response?.status === 403) {
-        alert('You are not authorized to check this item');
+        setAlertSnackbar({ open: true, message: 'You are not authorized to check this item', severity: 'warning' });
       } else {
-        alert('Failed to check item');
+        setAlertSnackbar({ open: true, message: 'Failed to check item', severity: 'error' });
       }
     }
   };
@@ -154,9 +159,10 @@ const GroceryListWidget = ({ transparentBackground }) => {
     try {
       await axios.delete(`${getApiUrl()}/api/grocery/${itemId}`);
       fetchGroceryItems();
+      setAlertSnackbar({ open: true, message: 'Item deleted successfully', severity: 'success' });
     } catch (error) {
       console.error('Error deleting item:', error);
-      alert('Failed to delete item');
+      setAlertSnackbar({ open: true, message: 'Failed to delete item', severity: 'error' });
     }
   };
 
@@ -165,9 +171,11 @@ const GroceryListWidget = ({ transparentBackground }) => {
       setShowPinDialog(true);
       return;
     }
-    if (window.confirm('Clear all checked items?')) {
-      clearCheckedItems();
-    }
+    setConfirmDialog({
+      open: true,
+      message: 'Are you sure you want to clear all checked items?',
+      onConfirm: clearCheckedItems
+    });
   };
 
   const clearCheckedItems = async () => {
@@ -178,9 +186,10 @@ const GroceryListWidget = ({ transparentBackground }) => {
         { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
       );
       fetchGroceryItems();
+      setAlertSnackbar({ open: true, message: 'Checked items cleared successfully', severity: 'success' });
     } catch (error) {
       console.error('Error clearing checked items:', error);
-      alert('Failed to clear checked items');
+      setAlertSnackbar({ open: true, message: 'Failed to clear checked items', severity: 'error' });
     }
   };
 
@@ -201,9 +210,10 @@ const GroceryListWidget = ({ transparentBackground }) => {
       );
       setShowGenerateDialog(false);
       fetchGroceryItems();
+      setAlertSnackbar({ open: true, message: 'Grocery list generated successfully', severity: 'success' });
     } catch (error) {
       console.error('Error generating grocery list:', error);
-      alert('Failed to generate grocery list');
+      setAlertSnackbar({ open: true, message: 'Failed to generate grocery list', severity: 'error' });
     }
   };
 
@@ -353,7 +363,21 @@ const GroceryListWidget = ({ transparentBackground }) => {
                 size="small"
                 variant="outlined"
                 onClick={handleGenerateFromMeals}
-                sx={{ minWidth: 'auto', px: 1 }}
+                sx={{ 
+                  minWidth: 'auto', 
+                  px: 1,
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  }
+                }}
                 title="Generate from Meals"
               >
                 📋
@@ -363,7 +387,26 @@ const GroceryListWidget = ({ transparentBackground }) => {
                 variant="outlined"
                 onClick={handleClearChecked}
                 disabled={checkedItems.length === 0}
-                sx={{ minWidth: 'auto', px: 1 }}
+                sx={{ 
+                  minWidth: 'auto', 
+                  px: 1,
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  },
+                  '&:disabled': {
+                    backgroundColor: 'var(--card-border)',
+                    color: 'var(--text-secondary)',
+                    opacity: 0.5
+                  }
+                }}
                 title="Clear Checked Items"
               >
                 <ClearAll fontSize="small" />
@@ -373,7 +416,19 @@ const GroceryListWidget = ({ transparentBackground }) => {
                 variant="contained"
                 startIcon={<Add />}
                 onClick={() => setShowAddDialog(true)}
-                sx={{ bgcolor: 'var(--secondary)' }}
+                sx={{ 
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--elevation-1)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                    color: 'var(--primary)',
+                    borderColor: 'var(--primary)',
+                    boxShadow: 'var(--elevation-2)'
+                  }
+                }}
               >
                 Add
               </Button>
@@ -383,7 +438,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
 
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
           {error && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255, 0, 0, 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(var(--error-rgb), 0.1)', borderRadius: 'var(--border-radius-small)', flexShrink: 0 }}>
               <Typography color="error" variant="body2">
                 {error}
               </Typography>
@@ -415,7 +470,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
                       mb: 1,
                       bgcolor: 'transparent',
                       '&:hover': {
-                        bgcolor: 'rgba(0, 0, 0, 0.05)'
+                        bgcolor: 'rgba(var(--background-rgb), 0.05)'
                       }
                     }}
                   >
@@ -436,7 +491,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
                               size="small"
                               sx={{
                                 bgcolor: 'var(--secondary)',
-                                color: 'white',
+                                color: 'var(--text)',
                                 fontSize: 'clamp(0.65rem, 1vw, 0.75rem)',
                                 height: 20
                               }}
@@ -448,7 +503,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
                               size="small"
                               sx={{
                                 bgcolor: 'var(--accent)',
-                                color: 'white',
+                                color: 'var(--text)',
                                 fontSize: 'clamp(0.65rem, 1vw, 0.75rem)',
                                 height: 20
                               }}
@@ -500,7 +555,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
                                   size="small"
                                   sx={{
                                     bgcolor: 'var(--secondary)',
-                                    color: 'white',
+                                    color: 'var(--text)',
                                     fontSize: 'clamp(0.65rem, 1vw, 0.75rem)',
                                     height: 20,
                                     opacity: 0.7
@@ -591,9 +646,21 @@ const GroceryListWidget = ({ transparentBackground }) => {
       </Card>
 
       {/* Add Item Dialog */}
-      <Dialog open={showAddDialog} onClose={() => setShowAddDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Grocery Item</DialogTitle>
-        <DialogContent sx={{ p: 2 }}>
+      <Dialog 
+        open={showAddDialog} 
+        onClose={() => setShowAddDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: 'var(--text)' }}>Add Grocery Item</DialogTitle>
+        <DialogContent sx={{ p: 2, color: 'var(--text)' }}>
           <TextField
             fullWidth
             label="Item Name"
@@ -619,7 +686,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setShowAddDialog(false)}>Cancel</Button>
+          <Button onClick={() => setShowAddDialog(false)} sx={{ color: 'var(--text-secondary)' }}>Cancel</Button>
           <Button 
             variant="contained" 
             onClick={handleAddItem}
@@ -697,7 +764,7 @@ const GroceryListWidget = ({ transparentBackground }) => {
               disabled={!pinInput}
               sx={{
                 bgcolor: 'var(--secondary)',
-                color: 'white',
+                color: 'var(--text)',
                 '&:hover': {
                   bgcolor: 'var(--secondary)',
                   opacity: 0.9
@@ -709,6 +776,24 @@ const GroceryListWidget = ({ transparentBackground }) => {
           </DialogActions>
         </form>
       </Dialog>
+
+      <ConfirmationDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, message: '', onConfirm: () => {} })}
+        onConfirm={confirmDialog.onConfirm}
+        title="Clear Checked Items"
+        message={confirmDialog.message}
+        confirmText="Clear"
+        cancelText="Cancel"
+        severity="warning"
+      />
+
+      <AlertSnackbar
+        open={alertSnackbar.open}
+        onClose={() => setAlertSnackbar({ open: false, message: '', severity: 'info' })}
+        message={alertSnackbar.message}
+        severity={alertSnackbar.severity}
+      />
     </>
   );
 };

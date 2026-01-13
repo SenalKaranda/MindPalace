@@ -104,7 +104,10 @@ const ChoreWidget = ({ transparentBackground }) => {
       const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`);
       setBonusChoreClamValue(response.data.value ? parseInt(response.data.value) : 1);
     } catch (error) {
-      console.error('Error fetching bonus chore clam value setting:', error);
+      // 404 is expected if the setting doesn't exist yet - use default value
+      if (error.response?.status !== 404) {
+        console.error('Error fetching bonus chore clam value setting:', error);
+      }
       setBonusChoreClamValue(1);
     }
   };
@@ -550,7 +553,7 @@ const ChoreWidget = ({ transparentBackground }) => {
             top: -8,
             right: -8,
             bgcolor: 'var(--accent)',
-            color: 'white',
+            color: 'var(--text)',
             fontSize: '0.7rem',
             height: 24,
             '& .MuiChip-label': {
@@ -588,7 +591,7 @@ const ChoreWidget = ({ transparentBackground }) => {
       >
         <Box sx={{ flex: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: chore.completed ? 'normal' : 'bold', fontSize: '0.85rem' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: chore.completed ? 'normal' : 'bold', fontSize: '0.85rem', color: 'var(--text)' }}>
               {chore.title}
             </Typography>
             {dayName && (
@@ -597,7 +600,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                 size="small"
                 sx={{ 
                   bgcolor: isBonusChore ? 'var(--accent)' : 'var(--card-border)', 
-                  color: isBonusChore ? 'white' : 'var(--text)',
+                  color: isBonusChore ? 'var(--text)' : 'var(--text)',
                   fontSize: '0.65rem',
                   height: 20,
                   fontWeight: 'bold'
@@ -608,16 +611,16 @@ const ChoreWidget = ({ transparentBackground }) => {
               <Chip
                 label={`${chore.clam_value} 🥟`}
                 size="small"
-                sx={{ bgcolor: 'var(--accent)', color: 'white' }}
+                sx={{ bgcolor: 'var(--accent)', color: 'var(--text)' }}
               />
             )}
           </Box>
           {chore.description && (
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+            <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               {chore.description}
             </Typography>
           )}
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
             {chore.time_period.replace('-', ' ')} • {repeatTypes.find(t => t.value === chore.repeat_type)?.label}
           </Typography>
         </Box>
@@ -631,10 +634,10 @@ const ChoreWidget = ({ transparentBackground }) => {
               width: 32,
               height: 32,
               bgcolor: chore.completed ? 'transparent' : 'var(--accent)',
-              color: chore.completed ? 'var(--accent)' : 'white',
+              color: chore.completed ? 'var(--accent)' : 'var(--text)',
               '&:hover': {
-                bgcolor: chore.completed ? 'rgba(var(--accent-rgb), 0.1)' : 'var(--accent)',
-                filter: 'brightness(1.1)'
+                bgcolor: chore.completed ? 'rgba(var(--accent-rgb), 0.12)' : 'var(--accent)',
+                opacity: chore.completed ? 1 : 0.9
               }
             }}
           >
@@ -727,7 +730,20 @@ const ChoreWidget = ({ transparentBackground }) => {
               onClick={() => setShowBonusChores(!showBonusChores)}
               variant={showBonusChores ? "contained" : "outlined"}
               size="small"
-              sx={{ minWidth: 'auto', px: 1 }}
+              sx={{ 
+                minWidth: 'auto', 
+                px: 1,
+                backgroundColor: showBonusChores ? 'rgba(var(--primary-rgb), 0.12)' : 'rgba(var(--primary-rgb), 0.12)',
+                color: showBonusChores ? 'var(--primary)' : 'var(--text-secondary)',
+                border: '1px solid var(--card-border)',
+                boxShadow: 'var(--elevation-1)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                  color: 'var(--primary)',
+                  borderColor: 'var(--primary)'
+                }
+              }}
               title={showBonusChores ? "Hide Bonus Chores" : "Show Bonus Chores"}
             >
               🥟
@@ -737,7 +753,18 @@ const ChoreWidget = ({ transparentBackground }) => {
               onClick={handleAddBonusChoreClick}
               variant="contained"
               size="small"
-              sx={{ bgcolor: 'var(--accent)' }}
+              sx={{ 
+                bgcolor: 'var(--accent)',
+                color: 'var(--text)',
+                border: '1px solid var(--accent)',
+                boxShadow: 'var(--elevation-1)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  bgcolor: 'var(--accent)',
+                  opacity: 0.9,
+                  boxShadow: 'var(--elevation-2)'
+                }
+              }}
             >
               Add Bonus Chore
             </Button>
@@ -746,6 +773,19 @@ const ChoreWidget = ({ transparentBackground }) => {
               onClick={handleAddChoreClick}
               variant="outlined"
               size="small"
+              sx={{
+                backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--card-border)',
+                boxShadow: 'var(--elevation-1)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                  color: 'var(--primary)',
+                  borderColor: 'var(--primary)',
+                  boxShadow: 'var(--elevation-2)'
+                }
+              }}
             >
               Add Chore
             </Button>
@@ -806,7 +846,7 @@ const ChoreWidget = ({ transparentBackground }) => {
 
                   <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                     {userChores.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1 }}>
+                      <Typography variant="body2" sx={{ textAlign: 'center', py: 1, color: 'var(--text-secondary)' }}>
                         No chores for today
                       </Typography>
                     ) : (
@@ -843,13 +883,12 @@ const ChoreWidget = ({ transparentBackground }) => {
               </Typography>
               
               {availableBonusChores.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                <Typography variant="body2" sx={{ textAlign: 'center', py: 2, color: 'var(--text-secondary)' }}>
                   No bonus chores available
                 </Typography>
               ) : (
                 <Box sx={{ 
                   flex: 1, 
-                  minHeight: 0, 
                   overflow: 'auto',
                   display: 'grid',
                   // Force at least 2 columns by capping max column width at ~50% (minus gap)
@@ -894,13 +933,13 @@ const ChoreWidget = ({ transparentBackground }) => {
                           size="small"
                           sx={{ 
                             bgcolor: 'var(--accent)', 
-                            color: 'white',
+                            color: 'var(--text)',
                             fontWeight: 'bold'
                           }}
                         />
                       </Box>
                       {chore.description && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontSize: '0.875rem' }}>
+                        <Typography variant="body2" sx={{ mb: 1.5, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                           {chore.description}
                         </Typography>
                       )}
@@ -919,7 +958,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                               color: 'var(--accent)',
                               '&:hover': {
                                 bgcolor: 'var(--accent)',
-                                color: 'white'
+                                color: 'var(--text)'
                               }
                             }}
                           >
@@ -1140,7 +1179,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                   </Box>
 
                   {!selectedUserForPrize && (
-                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4, width: '100%' }}>
+                    <Typography variant="body2" sx={{ textAlign: 'center', py: 4, width: '100%', color: 'var(--text-secondary)' }}>
                       Select a user to shop for prizes
                     </Typography>
                   )}
@@ -1150,9 +1189,21 @@ const ChoreWidget = ({ transparentBackground }) => {
         </Box>
       </Card>
 
-      <Dialog open={showAddDialog} onClose={() => setShowAddDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Add New Chore</DialogTitle>
-          <DialogContent>
+      <Dialog 
+        open={showAddDialog} 
+        onClose={() => setShowAddDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text)',
+            border: '1px solid var(--card-border)',
+          }
+        }}
+      >
+          <DialogTitle sx={{ color: 'var(--text)' }}>Add New Chore</DialogTitle>
+          <DialogContent sx={{ color: 'var(--text)' }}>
             <TextField
               fullWidth
               label="Title"
@@ -1243,7 +1294,7 @@ const ChoreWidget = ({ transparentBackground }) => {
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowAddDialog(false)}>Cancel</Button>
+            <Button onClick={() => setShowAddDialog(false)} sx={{ color: 'var(--text-secondary)' }}>Cancel</Button>
             <Button 
               onClick={saveChore} 
               variant="contained"
@@ -1255,10 +1306,22 @@ const ChoreWidget = ({ transparentBackground }) => {
         </Dialog>
 
         {/* Bonus Chore Dialog */}
-        <Dialog open={showBonusChoreDialog} onClose={() => setShowBonusChoreDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Add New Bonus Chore</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
+        <Dialog 
+          open={showBonusChoreDialog} 
+          onClose={() => setShowBonusChoreDialog(false)} 
+          maxWidth="sm" 
+          fullWidth
+          PaperProps={{
+            sx: {
+              backgroundColor: 'var(--card-bg)',
+              color: 'var(--text)',
+              border: '1px solid var(--card-border)',
+            }
+          }}
+        >
+          <DialogTitle sx={{ color: 'var(--text)' }}>Add New Bonus Chore</DialogTitle>
+          <DialogContent sx={{ color: 'var(--text)' }}>
+            <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic', color: 'var(--text-secondary)' }}>
               Bonus chores are available 7 days a week and will be awarded {bonusChoreClamValue} 🥟 when completed.
             </Typography>
             <TextField
@@ -1288,12 +1351,12 @@ const ChoreWidget = ({ transparentBackground }) => {
                 ))}
               </Select>
             </FormControl>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+            <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               Clam Value: {bonusChoreClamValue} 🥟 (configured in Admin Panel)
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowBonusChoreDialog(false)}>Cancel</Button>
+            <Button onClick={() => setShowBonusChoreDialog(false)} sx={{ color: 'var(--text-secondary)' }}>Cancel</Button>
             <Button 
               onClick={saveBonusChore} 
               variant="contained"
@@ -1336,7 +1399,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                 disabled={!pinInput}
                 sx={{
                   backgroundColor: 'var(--primary)',
-                  color: 'white',
+                  color: 'var(--text)',
                   '&:hover': {
                     backgroundColor: 'var(--primary)',
                     opacity: 0.9
@@ -1379,7 +1442,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               🛍️ Prize Shop
             </Typography>
             {selectedUserForPrize && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
                 {users.find(u => u.id === selectedUserForPrize)?.username} - {users.find(u => u.id === selectedUserForPrize)?.clam_total || 0} 🥟
               </Typography>
             )}
@@ -1438,14 +1501,16 @@ const ChoreWidget = ({ transparentBackground }) => {
                           fontSize: '3rem',
                           mb: 0.5,
                           filter: canPurchase ? 'none' : 'grayscale(100%)',
-                          transition: 'transform 0.2s ease'
+                          transition: 'transform 0.2s ease',
+                          color: 'var(--text)'
                         }}>
                           {(prize.emoji && prize.emoji.trim()) ? prize.emoji : '🎁'}
                         </Box>
                         <Typography variant="subtitle2" sx={{ 
                           fontWeight: 'bold',
                           textAlign: 'center',
-                          fontSize: '0.85rem'
+                          fontSize: '0.85rem',
+                          color: 'var(--text)'
                         }}>
                           {prize.name}
                         </Typography>
@@ -1508,7 +1573,6 @@ const ChoreWidget = ({ transparentBackground }) => {
                   })
                 )}
               </Box>
-            )}
           </DialogContent>
           <DialogActions sx={{ p: 2, borderTop: '1px solid var(--card-border)' }}>
             <Button 
@@ -1564,7 +1628,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                 <Typography variant="h5" sx={{ mb: 1, fontWeight: 'bold' }}>
                   {purchasedPrize.name}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
                   Purchased for {purchasedPrize.clam_cost} 🥟
                 </Typography>
               </>
@@ -1576,7 +1640,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               onClick={handleCelebrationModalClose}
               sx={{
                 bgcolor: 'var(--accent)',
-                color: 'white',
+                color: 'var(--text)',
                 fontWeight: 'bold',
                 px: 4,
                 '&:hover': {
@@ -1592,10 +1656,10 @@ const ChoreWidget = ({ transparentBackground }) => {
 
       <Backdrop
         sx={{
-          color: '#fff',
+          color: 'var(--text)',
           zIndex: (theme) => theme.zIndex.drawer + 1,
           backdropFilter: 'blur(10px)',
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.3)',
         }}
         open={isLoading}
       >
@@ -1607,10 +1671,10 @@ const ChoreWidget = ({ transparentBackground }) => {
             gap: 3,
             p: 4,
             borderRadius: 3,
-            background: 'rgba(255, 255, 255, 0.1)',
+            background: 'rgba(var(--text-rgb, 255, 255, 255), 0.1)',
             backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+            border: '1px solid rgba(var(--text-rgb, 255, 255, 255), 0.2)',
+            boxShadow: '0 8px 32px rgba(var(--background-rgb, 0, 0, 0), 0.3)',
           }}
         >
           <Box
@@ -1650,10 +1714,10 @@ const ChoreWidget = ({ transparentBackground }) => {
           <Typography
             variant="h6"
             sx={{
-              color: 'white',
+              color: 'var(--text)',
               fontWeight: 'bold',
               textAlign: 'center',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)',
+              textShadow: '0 2px 4px rgba(var(--background-rgb, 0, 0, 0), 0.5)',
             }}
           >
             Processing...
@@ -1663,7 +1727,7 @@ const ChoreWidget = ({ transparentBackground }) => {
             size={40}
             thickness={2}
             sx={{
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'rgba(var(--text-rgb, 255, 255, 255), 0.7)',
               '& .MuiCircularProgress-circle': {
                 strokeLinecap: 'round',
               },

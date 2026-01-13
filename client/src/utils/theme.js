@@ -6,34 +6,34 @@
 export const defaultThemeSettings = {
   colors: {
     light: {
-      background: '#f5f5f5',
+      background: '#fafafa',
       surface: '#ffffff',
       cardBg: '#ffffff',
-      text: '#171717',
-      textSecondary: '#666666',
+      text: '#000000',
+      textSecondary: '#525252',
       border: '#e0e0e0',
-      cardBorder: '#e5e5e5',
+      cardBorder: '#d4d4d4',
       success: '#10b981',
       warning: '#f59e0b',
       error: '#ef4444',
       primary: '#9E7FFF',
       secondary: '#38bdf8',
-      accent: '#757575',
+      accent: '#636363',
     },
     dark: {
-      background: '#171717',
-      surface: '#262626',
-      cardBg: '#2a2a2a',
-      text: '#FFFFFF',
-      textSecondary: '#A3A3A3',
-      border: '#2F2F2F',
-      cardBorder: '#3a3a3a',
+      background: '#0f0f0f',
+      surface: '#1a1a1a',
+      cardBg: '#3a3a3a',
+      text: '#ffffff',
+      textSecondary: '#e5e5e5',
+      border: '#2a2a2a',
+      cardBorder: '#4a4a4a',
       success: '#10b981',
       warning: '#f59e0b',
       error: '#ef4444',
       primary: '#9E7FFF',
       secondary: '#38bdf8',
-      accent: '#757575',
+      accent: '#8a8a8a',
     },
     gradients: {
       lightGradientStart: '#00ddeb',
@@ -90,11 +90,14 @@ export const loadThemeSettings = () => {
     if (saved) {
       const parsed = JSON.parse(saved);
       // Merge with defaults to ensure all properties exist
-      return deepMerge(defaultThemeSettings, parsed);
+      const merged = deepMerge(defaultThemeSettings, parsed);
+      console.log('[Theme] Loaded theme settings from localStorage:', merged);
+      return merged;
     }
   } catch (error) {
-    console.error('Error loading theme settings:', error);
+    console.error('[Theme] Error loading theme settings:', error);
   }
+  console.log('[Theme] Using default theme settings');
   return defaultThemeSettings;
 };
 
@@ -107,6 +110,25 @@ export const saveThemeSettings = (settings) => {
   } catch (error) {
     console.error('Error saving theme settings:', error);
   }
+};
+
+/**
+ * Convert hex color to RGB string (e.g., "#ff0000" -> "255, 0, 0")
+ * @param {string} hex - Hex color string
+ * @returns {string} RGB string
+ */
+const hexToRgb = (hex) => {
+  if (!hex) return '0, 0, 0';
+  // Remove # if present
+  hex = hex.replace('#', '');
+  // Handle 3-digit hex
+  if (hex.length === 3) {
+    hex = hex.split('').map(char => char + char).join('');
+  }
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
 };
 
 /**
@@ -124,10 +146,20 @@ export const applyThemeSettings = (settings, currentTheme = 'light', isPreview =
     ? (document.documentElement.getAttribute('data-theme') || 'light')
     : currentTheme;
   
+  console.log(`[Theme] Applying theme: ${themeToUse} (isPreview: ${isPreview})`);
+  
+  // Ensure settings has the correct structure
+  if (!settings || !settings.colors || !settings.colors[themeToUse]) {
+    console.warn('[Theme] Invalid theme settings structure, using defaults');
+    settings = defaultThemeSettings;
+  }
+  
   const themeColors = settings.colors[themeToUse] || settings.colors.light;
   const gradients = settings.colors.gradients || defaultThemeSettings.colors.gradients;
+  
+  console.log(`[Theme] Theme colors for ${themeToUse}:`, themeColors);
 
-  // Apply color variables (convert camelCase to kebab-case)
+  // Apply color variables (convert camelCase to kebab-case) and generate RGB versions
   Object.entries(themeColors).forEach(([key, value]) => {
     // Handle special cases
     const cssKeyMap = {
@@ -137,6 +169,12 @@ export const applyThemeSettings = (settings, currentTheme = 'light', isPreview =
     };
     const cssKey = cssKeyMap[key] || key.replace(/([A-Z])/g, '-$1').toLowerCase();
     root.style.setProperty(`--${cssKey}`, value);
+    
+    // Generate RGB variable for colors that might need rgba() support
+    if (value && typeof value === 'string' && value.startsWith('#')) {
+      const rgbValue = hexToRgb(value);
+      root.style.setProperty(`--${cssKey}-rgb`, rgbValue);
+    }
   });
 
   // Apply gradient variables
@@ -173,6 +211,47 @@ export const applyThemeSettings = (settings, currentTheme = 'light', isPreview =
   root.style.setProperty('--elevation-1', settings.shadows.elevation1);
   root.style.setProperty('--elevation-2', settings.shadows.elevation2);
   root.style.setProperty('--elevation-3', settings.shadows.elevation3);
+  
+  // Set theme-aware gradient variables based on current theme
+  if (themeToUse === 'dark') {
+    root.style.setProperty('--gradient-start', gradients.darkGradientStart);
+    root.style.setProperty('--gradient-end', gradients.darkGradientEnd);
+  } else {
+    root.style.setProperty('--gradient-start', gradients.lightGradientStart);
+    root.style.setProperty('--gradient-end', gradients.lightGradientEnd);
+  }
+  
+  // Calculate and apply derived variables
+  const backgroundRgb = hexToRgb(themeColors.background);
+  const cardBgRgb = hexToRgb(themeColors.cardBg);
+  const textRgb = hexToRgb(themeColors.text);
+  
+  // Set gradient
+  root.style.setProperty('--gradient', `linear-gradient(135deg, ${themeColors.background} 0%, ${themeColors.surface} 100%)`);
+  
+  // Set bottom bar background with transparency
+  const bottomBarRgb = hexToRgb(themeColors.surface || themeColors.cardBg);
+  root.style.setProperty('--bottom-bar-bg', `rgba(${bottomBarRgb}, 0.95)`);
+  
+  // Validate that all required RGB variables are set
+  const requiredRgbVars = ['primary', 'secondary', 'accent', 'background', 'surface', 'card-bg', 'text', 'text-secondary', 'border', 'card-border', 'success', 'warning', 'error'];
+  const missingRgbVars = [];
+  requiredRgbVars.forEach(varName => {
+    const rgbValue = root.style.getPropertyValue(`--${varName}-rgb`);
+    if (!rgbValue || rgbValue.trim() === '') {
+      missingRgbVars.push(`--${varName}-rgb`);
+    }
+  });
+  
+  if (missingRgbVars.length > 0) {
+    console.warn('[Theme] Missing RGB variables:', missingRgbVars);
+  }
+  
+  // Debug: Verify key variables were set
+  const verifyText = root.style.getPropertyValue('--text');
+  const verifyBackground = root.style.getPropertyValue('--background');
+  const verifyCardBg = root.style.getPropertyValue('--card-bg');
+  console.log('[Theme] Applied CSS variables - text:', verifyText, 'background:', verifyBackground, 'card-bg:', verifyCardBg);
 };
 
 /**
@@ -216,21 +295,29 @@ export const themePresets = {
         ...defaultThemeSettings.colors,
         light: {
           ...defaultThemeSettings.colors.light,
-          primary: '#0ea5e9',
+          primary: '#0284c7',
           secondary: '#06b6d4',
-          accent: '#14b8a6',
+          accent: '#0891b2',
           background: '#f0f9ff',
           surface: '#ffffff',
           cardBg: '#ffffff',
+          text: '#1a1a1a',
+          textSecondary: '#6b6b6b',
+          border: '#bfdbfe',
+          cardBorder: '#93c5fd',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#0ea5e9',
+          primary: '#38bdf8',
           secondary: '#06b6d4',
-          accent: '#14b8a6',
-          background: '#0c4a6e',
-          surface: '#075985',
-          cardBg: '#0e7490',
+          accent: '#22d3ee',
+          background: '#0f172a',
+          surface: '#1e293b',
+          cardBg: '#475569',
+          text: '#ffffff',
+          textSecondary: '#e2e8f0',
+          border: '#1e293b',
+          cardBorder: '#64748b',
         },
       },
     },
@@ -243,21 +330,29 @@ export const themePresets = {
         ...defaultThemeSettings.colors,
         light: {
           ...defaultThemeSettings.colors.light,
-          primary: '#16a34a',
+          primary: '#15803d',
           secondary: '#22c55e',
-          accent: '#84cc16',
+          accent: '#65a30d',
           background: '#f0fdf4',
           surface: '#ffffff',
           cardBg: '#ffffff',
+          text: '#1a1a1a',
+          textSecondary: '#6b6b6b',
+          border: '#bbf7d0',
+          cardBorder: '#86efac',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#16a34a',
+          primary: '#4ade80',
           secondary: '#22c55e',
           accent: '#84cc16',
-          background: '#14532d',
-          surface: '#166534',
-          cardBg: '#15803d',
+          background: '#0f1f14',
+          surface: '#1a2e1f',
+          cardBg: '#2d4a3a',
+          text: '#ffffff',
+          textSecondary: '#d1fae5',
+          border: '#1a2e1f',
+          cardBorder: '#3d5a4a',
         },
       },
     },
@@ -270,21 +365,29 @@ export const themePresets = {
         ...defaultThemeSettings.colors,
         light: {
           ...defaultThemeSettings.colors.light,
-          primary: '#f97316',
-          secondary: '#fb923c',
-          accent: '#f43f5e',
+          primary: '#ea580c',
+          secondary: '#f97316',
+          accent: '#dc2626',
           background: '#fff7ed',
           surface: '#ffffff',
           cardBg: '#ffffff',
+          text: '#1a1a1a',
+          textSecondary: '#6b6b6b',
+          border: '#fed7aa',
+          cardBorder: '#fdba74',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#f97316',
-          secondary: '#fb923c',
-          accent: '#f43f5e',
-          background: '#7c2d12',
-          surface: '#9a3412',
-          cardBg: '#c2410c',
+          primary: '#fb923c',
+          secondary: '#f97316',
+          accent: '#f87171',
+          background: '#1c1917',
+          surface: '#292524',
+          cardBg: '#3a3530',
+          text: '#ffffff',
+          textSecondary: '#fef3c7',
+          border: '#292524',
+          cardBorder: '#4a4438',
         },
       },
     },
@@ -299,19 +402,27 @@ export const themePresets = {
           ...defaultThemeSettings.colors.light,
           primary: '#6366f1',
           secondary: '#8b5cf6',
-          accent: '#a855f7',
+          accent: '#9333ea',
           background: '#f5f3ff',
           surface: '#ffffff',
           cardBg: '#ffffff',
+          text: '#1a1a1a',
+          textSecondary: '#6b6b6b',
+          border: '#e9d5ff',
+          cardBorder: '#d8b4fe',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#6366f1',
-          secondary: '#8b5cf6',
-          accent: '#a855f7',
-          background: '#1e1b4b',
-          surface: '#312e81',
-          cardBg: '#4338ca',
+          primary: '#818cf8',
+          secondary: '#a78bfa',
+          accent: '#c084fc',
+          background: '#0f0f1e',
+          surface: '#1a1a2e',
+          cardBg: '#2d2a4e',
+          text: '#ffffff',
+          textSecondary: '#e9d5ff',
+          border: '#1a1a2e',
+          cardBorder: '#3d3a5e',
         },
       },
     },
@@ -324,21 +435,29 @@ export const themePresets = {
         ...defaultThemeSettings.colors,
         light: {
           ...defaultThemeSettings.colors.light,
-          primary: '#6b7280',
-          secondary: '#9ca3af',
-          accent: '#d1d5db',
+          primary: '#525252',
+          secondary: '#737373',
+          accent: '#a3a3a3',
           background: '#ffffff',
-          surface: '#f9fafb',
+          surface: '#fafafa',
           cardBg: '#ffffff',
+          text: '#000000',
+          textSecondary: '#525252',
+          border: '#e5e5e5',
+          cardBorder: '#d4d4d4',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#6b7280',
-          secondary: '#9ca3af',
-          accent: '#d1d5db',
-          background: '#111827',
-          surface: '#1f2937',
-          cardBg: '#374151',
+          primary: '#a3a3a3',
+          secondary: '#d4d4d4',
+          accent: '#e5e5e5',
+          background: '#0a0a0a',
+          surface: '#141414',
+          cardBg: '#2a2a2a',
+          text: '#ffffff',
+          textSecondary: '#e5e5e5',
+          border: '#262626',
+          cardBorder: '#404040',
         },
       },
     },
@@ -351,21 +470,29 @@ export const themePresets = {
         ...defaultThemeSettings.colors,
         light: {
           ...defaultThemeSettings.colors.light,
-          primary: '#ec4899',
+          primary: '#db2777',
           secondary: '#f59e0b',
           accent: '#10b981',
           background: '#fef3c7',
           surface: '#ffffff',
           cardBg: '#ffffff',
+          text: '#1a1a1a',
+          textSecondary: '#6b6b6b',
+          border: '#fde68a',
+          cardBorder: '#fcd34d',
         },
         dark: {
           ...defaultThemeSettings.colors.dark,
-          primary: '#ec4899',
-          secondary: '#f59e0b',
-          accent: '#10b981',
-          background: '#451a03',
-          surface: '#78350f',
-          cardBg: '#92400e',
+          primary: '#f472b6',
+          secondary: '#fbbf24',
+          accent: '#34d399',
+          background: '#1a1814',
+          surface: '#252320',
+          cardBg: '#3a3630',
+          text: '#ffffff',
+          textSecondary: '#fef3c7',
+          border: '#252320',
+          cardBorder: '#4a4438',
         },
       },
     },

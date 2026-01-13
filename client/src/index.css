@@ -1,35 +1,44 @@
 :root {
+  /* Default theme colors - will be overridden by theme system when it loads */
   --primary: #9E7FFF;
   --secondary: #38bdf8;
-  --accent: #757575;
-  --background: #171717;
-  --surface: #262626;
-  --card-bg: #2a2a2a;
-  --text: #FFFFFF;
-  --text-secondary: #A3A3A3;
-  --border: #2F2F2F;
-  --card-border: #3a3a3a;
+  --accent: #636363;
+  --background: #0f0f0f;
+  --surface: #1a1a1a;
+  --card-bg: #3a3a3a;
+  --text: #ffffff;
+  --text-secondary: #e5e5e5;
+  --border: #2a2a2a;
+  --card-border: #4a4a4a;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
-  --accent-rgb: 158, 127, 255;
+  
+  /* RGB variables for rgba() support */
+  --primary-rgb: 158, 127, 255;
+  --secondary-rgb: 56, 189, 248;
+  --accent-rgb: 99, 99, 99;
+  --background-rgb: 15, 15, 15;
+  --surface-rgb: 26, 26, 26;
+  --card-bg-rgb: 58, 58, 58;
+  --text-rgb: 255, 255, 255;
+  --text-secondary-rgb: 229, 229, 229;
+  --border-rgb: 42, 42, 42;
+  --card-border-rgb: 74, 74, 74;
+  --success-rgb: 16, 185, 129;
+  --warning-rgb: 245, 158, 11;
+  --error-rgb: 239, 68, 68;
+  
+  /* Other variables */
   --backdrop-blur: blur(10px);
-  --gradient: linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
-  --bottom-bar-bg: rgba(38, 38, 38, 0.95);
   --bottom-bar-height: 56px; /* MD3 standard (was 40px) */
   --container-background-override: var(--gradient);
   --dynamic-text-size: 16px;
   --dynamic-card-width: 300px;
   --dynamic-card-padding: 20px;
   --dynamic-card-height: 200px;
-  --light-gradient-start: #00ddeb;
-  --light-gradient-end: #ff6b6b;
-  --dark-gradient-start: #2e2767;
-  --dark-gradient-end: #620808;
-  --light-button-gradient-start: #00ddeb;
-  --light-button-gradient-end: #ff6b6b;
-  --dark-button-gradient-start: #2e2767;
-  --dark-button-gradient-end: #620808;
+  --gradient: linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
+  --bottom-bar-bg: rgba(var(--surface-rgb), 0.95);
   
   /* MD3 Spacing Scale - Can be overridden by theme settings */
   --spacing-xs: 4px;   /* Tight spacing (icons, small elements) */
@@ -64,18 +73,79 @@
   --shadow: var(--elevation-1);
 }
 
-[data-theme="light"] {
-  --background: #f5f5f5;
-  --surface: #ffffff;
-  --card-bg: #ffffff;
-  --text: #171717;
-  --text-secondary: #666666;
-  --border: #e0e0e0;
-  --card-border: #e5e5e5;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --gradient: linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%);
-  --bottom-bar-bg: rgba(255, 255, 255, 0.95);
+/* Override MUI Card/Paper default text colors to use theme variables */
+.MuiCard-root,
+.MuiPaper-root {
+  color: var(--text) !important;
 }
+
+.MuiCard-root .MuiTypography-root,
+.MuiPaper-root .MuiTypography-root {
+  color: var(--text) !important;
+}
+
+/* Ensure all icons in buttons use theme colors */
+.MuiIconButton-root .MuiSvgIcon-root {
+  color: inherit;
+}
+
+.MuiButton-root .MuiSvgIcon-root {
+  color: inherit;
+}
+
+/* Override MUI ToggleButton default styling to use theme variables */
+.MuiToggleButton-root {
+  color: var(--text-secondary) !important;
+  border-color: var(--border) !important;
+  background-color: transparent !important;
+}
+
+.MuiToggleButton-root:hover {
+  background-color: rgba(var(--primary-rgb), 0.08) !important;
+  color: var(--primary) !important;
+}
+
+.MuiToggleButton-root.Mui-selected {
+  color: var(--primary) !important;
+  background-color: rgba(var(--primary-rgb), 0.12) !important;
+}
+
+.MuiToggleButton-root.Mui-selected:hover {
+  background-color: rgba(var(--primary-rgb), 0.16) !important;
+  color: var(--primary) !important;
+}
+
+.MuiToggleButtonGroup-root {
+  border-color: var(--border) !important;
+}
+
+/* Ensure TextField inputs use theme colors */
+.MuiTextField-root .MuiOutlinedInput-root {
+  color: var(--text) !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root fieldset {
+  border-color: var(--border) !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root:hover fieldset {
+  border-color: var(--primary) !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root.Mui-focused fieldset {
+  border-color: var(--primary) !important;
+}
+
+.MuiTextField-root .MuiInputLabel-root {
+  color: var(--text-secondary) !important;
+}
+
+.MuiTextField-root .MuiInputLabel-root.Mui-focused {
+  color: var(--primary) !important;
+}
+
+/* Theme variables are set by theme.js applyThemeSettings() */
+/* [data-theme="light"] selector removed - theme system handles this */
 
 * {
   margin: 0;
@@ -128,7 +198,7 @@ body {
 .card.transparent-card {
   background: transparent;
   backdrop-filter: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--text-rgb, 255, 255, 255), 0.1);
 }
 
 /* React Grid Layout Styles */
@@ -170,9 +240,9 @@ body {
   height: 48px;
   cursor: ns-resize;
   background-color: var(--accent);
-  color: white;
+  color: var(--text);
   border-radius: 0 0 8px 8px;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 -2px 8px rgba(var(--background-rgb, 0, 0, 0), 0.2);
   z-index: 1002;
   user-select: none;
   font-size: 0.75rem;

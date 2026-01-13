@@ -131,7 +131,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     url: '',
     username: '',
     password: '',
-    color: '#6e44ff'
+    color: 'var(--primary)'
   });
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -189,8 +189,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
   const [themeSettings, setThemeSettings] = useState(() => loadThemeSettings());
   const [themeSubTab, setThemeSubTab] = useState(0); // Sub-tabs for theming sections
   const [calendarSettings, setCalendarSettings] = useState({
-    eventBackgroundColor: '#6e44ff',
-    eventTextColor: '#ffffff',
+    eventBackgroundColor: 'var(--primary)',
+    eventTextColor: 'var(--text)',
     textSize: 12,
     bulletSize: 10
   });
@@ -219,26 +219,44 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     return () => observer.disconnect();
   }, []);
 
-  // Create MUI theme that uses CSS variables
+  // Listen for theme updates to ensure MUI theme reads fresh CSS variables
+  const [themeUpdateCounter, setThemeUpdateCounter] = React.useState(0);
+  React.useEffect(() => {
+    const handleThemeUpdate = () => {
+      console.log('[AdminPanel] Theme CSS variables updated, incrementing counter to force MUI theme recalculation');
+      setThemeUpdateCounter(prev => prev + 1);
+    };
+    window.addEventListener('themeUpdated', handleThemeUpdate);
+    return () => window.removeEventListener('themeUpdated', handleThemeUpdate);
+  }, []);
+  
+  // Create MUI theme that reads CSS variables fresh each time
   const muiTheme = React.useMemo(() => {
+    // Read CSS variables fresh each time
     const isDark = currentTheme === 'dark';
+    const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+    const secondary = getComputedStyle(document.documentElement).getPropertyValue('--secondary').trim();
+    const background = getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
+    const cardBg = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim();
+    const text = getComputedStyle(document.documentElement).getPropertyValue('--text').trim();
+    const textSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
     
     return createTheme({
       palette: {
         mode: isDark ? 'dark' : 'light',
         primary: {
-          main: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#9E7FFF',
+          main: primary || '#9E7FFF',
         },
         secondary: {
-          main: getComputedStyle(document.documentElement).getPropertyValue('--secondary').trim() || '#38bdf8',
+          main: secondary || '#38bdf8',
         },
         background: {
-          default: getComputedStyle(document.documentElement).getPropertyValue('--background').trim() || (isDark ? '#171717' : '#f5f5f5'),
-          paper: getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || (isDark ? '#2a2a2a' : '#ffffff'),
+          default: background || (isDark ? '#0f0f0f' : '#fafafa'),
+          paper: cardBg || (isDark ? '#3a3a3a' : '#ffffff'),
         },
         text: {
-          primary: getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || (isDark ? '#FFFFFF' : '#171717'),
-          secondary: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || (isDark ? '#A3A3A3' : '#666666'),
+          primary: text || (isDark ? '#ffffff' : '#000000'),
+          secondary: textSecondary || (isDark ? '#e5e5e5' : '#525252'),
         },
         error: {
           main: getComputedStyle(document.documentElement).getPropertyValue('--error').trim() || '#ef4444',
@@ -262,6 +280,9 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
               backgroundColor: 'var(--card-bg)',
               color: 'var(--text)',
               border: 'var(--border-width, 1px) var(--border-style, solid) var(--card-border)',
+              '& .MuiTypography-root': {
+                color: 'var(--text)',
+              },
             },
           },
         },
@@ -270,6 +291,9 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             root: {
               backgroundColor: 'var(--card-bg)',
               color: 'var(--text)',
+              '& .MuiTypography-root': {
+                color: 'var(--text)',
+              },
             },
           },
         },
@@ -278,16 +302,20 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             root: {
               '& .MuiInputBase-root': {
                 color: 'var(--text)',
+                backgroundColor: 'transparent',
               },
               '& .MuiInputLabel-root': {
                 color: 'var(--text-secondary)',
+                '&.Mui-focused': {
+                  color: 'var(--primary)',
+                },
               },
               '& .MuiOutlinedInput-root': {
                 '& fieldset': {
                   borderColor: 'var(--border)',
                 },
                 '&:hover fieldset': {
-                  borderColor: 'var(--accent)',
+                  borderColor: 'var(--primary)',
                 },
                 '&.Mui-focused fieldset': {
                   borderColor: 'var(--primary)',
@@ -300,6 +328,66 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
           styleOverrides: {
             root: {
               textTransform: 'none',
+              '& .MuiSvgIcon-root': {
+                color: 'inherit',
+              },
+            },
+            contained: {
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              '&:hover': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                borderColor: 'var(--primary)',
+                boxShadow: 'var(--elevation-2)',
+              },
+            },
+            outlined: {
+              backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+              color: 'var(--text-secondary)',
+              borderColor: 'var(--card-border)',
+              boxShadow: 'var(--elevation-1)',
+              '&:hover': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+                borderColor: 'var(--primary)',
+                boxShadow: 'var(--elevation-2)',
+              },
+            },
+          },
+        },
+        MuiIconButton: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text-secondary)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+              },
+              '&.MuiIconButton-colorPrimary': {
+                color: 'var(--primary)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                  color: 'var(--primary)',
+                },
+              },
+              '&.MuiIconButton-colorError': {
+                color: 'var(--error)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--error-rgb), 0.12)',
+                  color: 'var(--error)',
+                },
+              },
+              '&.MuiIconButton-colorSecondary': {
+                color: 'var(--secondary)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--secondary-rgb), 0.12)',
+                  color: 'var(--secondary)',
+                },
+              },
             },
           },
         },
@@ -340,16 +428,126 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             },
           },
         },
+        MuiDialogTitle: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text)',
+            },
+          },
+        },
+        MuiDialogActions: {
+          styleOverrides: {
+            root: {
+              backgroundColor: 'var(--card-bg)',
+              color: 'var(--text)',
+            },
+          },
+        },
         MuiBackdrop: {
           styleOverrides: {
             root: {
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.5)',
+            },
+          },
+        },
+        MuiTypography: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text)',
+            },
+          },
+        },
+        MuiToggleButtonGroup: {
+          styleOverrides: {
+            root: {
+              borderColor: 'var(--border)',
+              '& .MuiToggleButton-root': {
+                borderColor: 'var(--border)',
+                '&:not(:first-of-type)': {
+                  borderLeftColor: 'var(--border)',
+                },
+              },
+            },
+          },
+        },
+        MuiToggleButton: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text-secondary)',
+              borderColor: 'var(--border)',
+              backgroundColor: 'transparent',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+                color: 'var(--primary)',
+              },
+              '&.Mui-selected': {
+                color: 'var(--primary)',
+                backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.16)',
+                  color: 'var(--primary)',
+                },
+              },
+            },
+          },
+        },
+        MuiSelect: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text)',
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'var(--border)',
+              },
+              '&:hover .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'var(--primary)',
+              },
+              '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'var(--primary)',
+              },
+            },
+          },
+        },
+        MuiMenuItem: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text)',
+              backgroundColor: 'var(--card-bg)',
+              '&:hover': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
+              },
+              '&.Mui-selected': {
+                backgroundColor: 'rgba(var(--primary-rgb), 0.12)',
+                '&:hover': {
+                  backgroundColor: 'rgba(var(--primary-rgb), 0.16)',
+                },
+              },
+            },
+          },
+        },
+        MuiInputLabel: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text-secondary)',
+              '&.Mui-focused': {
+                color: 'var(--primary)',
+              },
+            },
+          },
+        },
+        MuiFormLabel: {
+          styleOverrides: {
+            root: {
+              color: 'var(--text)',
+              '&.Mui-focused': {
+                color: 'var(--primary)',
+              },
             },
           },
         },
       },
     });
-  }, [themeSettings, currentTheme]); // Recreate theme when themeSettings or currentTheme change
+  }, [themeSettings, currentTheme, themeUpdateCounter]); // Recreate when theme settings, theme mode, or CSS variables change
 
   // Refresh interval options in milliseconds
   const refreshIntervalOptions = [
@@ -573,7 +771,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
       url: '',
       username: '',
       password: '',
-      color: '#6e44ff'
+      color: 'var(--primary)'
     });
     setTestResult(null);
     setShowCalendarDialog(true);
@@ -872,7 +1070,12 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     saveThemeSettings(themeSettings);
     // Get current theme from document and apply (not preview)
     const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    console.log('[AdminPanel] Saving theme settings and applying for', currentTheme);
     applyThemeSettings(themeSettings, currentTheme, false);
+    
+    // Force a custom event to notify other components
+    window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { theme: currentTheme, settings: themeSettings } }));
+    
     setSaveMessage({ show: true, type: 'success', text: 'Theme settings saved! Changes applied immediately.' });
     setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
   };
@@ -1559,7 +1762,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
           overflow: 'auto',
           backgroundColor: 'var(--card-bg)',
           borderRadius: 'var(--border-radius-medium)',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                      boxShadow: '0 4px 20px rgba(var(--background-rgb, 0, 0, 0), 0.3)',
           position: 'relative',
           zIndex: 1
         }}>
@@ -1600,7 +1803,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
               startIcon={<Close />}
               sx={{
                 backgroundColor: 'var(--primary)',
-                color: 'white',
+                color: 'var(--text)',
                 '&:hover': {
                   backgroundColor: 'var(--primary)',
                   opacity: 0.9
@@ -1645,7 +1848,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                 disabled={!pinInput}
                 sx={{
                   backgroundColor: 'var(--primary)',
-                  color: 'white',
+                  color: 'var(--text)',
                   '&:hover': {
                     backgroundColor: 'var(--primary)',
                     opacity: 0.9
@@ -2219,7 +2422,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   }}
                   sx={{
                     backgroundColor: 'var(--primary)',
-                    color: 'white',
+                    color: 'var(--text)',
                     '&:hover': {
                       backgroundColor: 'var(--primary)',
                       opacity: 0.9
@@ -2528,7 +2731,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                       variant="contained"
                       sx={{
                         backgroundColor: themeSettings.colors?.[previewTheme]?.primary || defaultThemeSettings.colors[previewTheme].primary,
-                        color: '#ffffff',
+                        color: 'var(--text)',
                         '&:hover': {
                           backgroundColor: themeSettings.colors?.[previewTheme]?.primary || defaultThemeSettings.colors[previewTheme].primary,
                           opacity: 0.9
@@ -3147,7 +3350,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   startIcon={<Save />}
                   sx={{
                     backgroundColor: 'var(--primary)',
-                    color: 'white',
+                    color: 'var(--text)',
                     '&:hover': {
                       backgroundColor: 'var(--primary)',
                       opacity: 0.9
@@ -3189,7 +3392,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   startIcon={<Save />}
                   sx={{
                     backgroundColor: 'var(--accent)',
-                    color: 'white',
+                    color: 'var(--text)',
                     mt: 2,
                     '&:hover': {
                       backgroundColor: 'var(--accent)',
@@ -3318,7 +3521,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   startIcon={<Save />}
                   sx={{
                     backgroundColor: 'var(--primary)',
-                    color: 'white',
+                    color: 'var(--text)',
                     '&:hover': {
                       backgroundColor: 'var(--primary)',
                       opacity: 0.9
@@ -3331,7 +3534,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                 <Divider sx={{ my: 4 }} />
 
                 <Typography variant="h6" sx={{ mb: 2 }}>Layout Mode</Typography>
-                <Box sx={{ mt: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1, bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
+                <Box sx={{ mt: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1, bgcolor: 'rgba(var(--text-rgb), 0.02)' }}>
                   <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
                     <ViewModule />
                     Layout Mode
@@ -3797,7 +4000,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                 }}
                 sx={{
                   backgroundColor: 'var(--primary)',
-                  color: 'white',
+                  color: 'var(--text)',
                   '&:hover': {
                     backgroundColor: 'var(--primary)',
                     opacity: 0.9
@@ -4234,10 +4437,10 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
       {/* Loading Indicator */}
       <Backdrop
         sx={{
-          color: '#fff',
+          color: 'var(--text)',
           zIndex: (theme) => theme.zIndex.drawer + 1,
           backdropFilter: 'blur(10px)',
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          backgroundColor: 'rgba(var(--background-rgb), 0.3)',
         }}
         open={isLoading}
       >
@@ -4249,10 +4452,10 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             gap: 3,
             p: 4,
             borderRadius: 3,
-            background: 'rgba(255, 255, 255, 0.1)',
+            background: 'rgba(var(--text-rgb), 0.1)',
             backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+            border: '1px solid rgba(var(--text-rgb), 0.2)',
+            boxShadow: '0 8px 32px rgba(var(--background-rgb), 0.3)',
           }}
         >
           <Box
@@ -4292,10 +4495,10 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
           <Typography
             variant="h6"
             sx={{
-              color: 'white',
+              color: 'var(--text)',
               fontWeight: 'bold',
               textAlign: 'center',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)',
+              textShadow: '0 2px 4px rgba(var(--background-rgb), 0.5)',
             }}
           >
             Processing...
@@ -4305,7 +4508,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             size={40}
             thickness={2}
             sx={{
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'rgba(var(--text-rgb), 0.7)',
               '& .MuiCircularProgress-circle': {
                 strokeLinecap: 'round',
               },
@@ -4362,7 +4565,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             disabled={savingRule || !ruleForm.rule_text.trim()}
             sx={{
               backgroundColor: 'var(--primary)',
-              color: 'white',
+              color: 'var(--text)',
               '&:hover': {
                 backgroundColor: 'var(--primary)',
                 opacity: 0.9
@@ -4731,7 +4934,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             disabled={savingPhotoSource || !photoSourceForm.name || !photoSourceForm.type}
             sx={{
               backgroundColor: 'var(--primary)',
-              color: 'white',
+              color: 'var(--text)',
               '&:hover': {
                 backgroundColor: 'var(--primary)',
                 opacity: 0.9

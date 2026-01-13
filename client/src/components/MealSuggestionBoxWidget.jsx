@@ -18,6 +18,8 @@ import {
   Chip
 } from '@mui/material';
 import { Add, Delete } from '@mui/icons-material';
+import ConfirmationDialog from './ConfirmationDialog';
+import AlertSnackbar from './AlertSnackbar';
 import axios from 'axios';
 import { getApiUrl } from '../utils/api.js';
 import moment from 'moment';
@@ -35,6 +37,8 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, message: '', onConfirm: () => {} });
+  const [alertSnackbar, setAlertSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
   useEffect(() => {
     fetchUsers();
@@ -103,7 +107,7 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
 
   const handleSubmitSuggestion = async () => {
     if (!selectedUser || !suggestionText.trim()) {
-      alert('Please select a user and enter a suggestion');
+      setAlertSnackbar({ open: true, message: 'Please select a user and enter a suggestion', severity: 'warning' });
       return;
     }
     try {
@@ -113,9 +117,10 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
       });
       setSuggestionText('');
       fetchSuggestions();
+      setAlertSnackbar({ open: true, message: 'Suggestion submitted successfully', severity: 'success' });
     } catch (error) {
       console.error('Error submitting suggestion:', error);
-      alert('Failed to submit suggestion');
+      setAlertSnackbar({ open: true, message: 'Failed to submit suggestion', severity: 'error' });
     }
   };
 
@@ -124,18 +129,23 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
       setShowPinDialog(true);
       return;
     }
-    if (!window.confirm('Delete this suggestion?')) return;
-    
-    try {
-      await axios.delete(
-        `${getApiUrl()}/api/meal-suggestions/${suggestionId}`,
-        { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
-      );
-      fetchSuggestions();
-    } catch (error) {
-      console.error('Error deleting suggestion:', error);
-      alert('Failed to delete suggestion');
-    }
+    setConfirmDialog({
+      open: true,
+      message: 'Are you sure you want to delete this suggestion?',
+      onConfirm: async () => {
+        try {
+          await axios.delete(
+            `${getApiUrl()}/api/meal-suggestions/${suggestionId}`,
+            { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
+          );
+          fetchSuggestions();
+          setAlertSnackbar({ open: true, message: 'Suggestion deleted successfully', severity: 'success' });
+        } catch (error) {
+          console.error('Error deleting suggestion:', error);
+          setAlertSnackbar({ open: true, message: 'Failed to delete suggestion', severity: 'error' });
+        }
+      }
+    });
   };
 
 
@@ -291,7 +301,7 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
               transform: 'translateX(-50%)',
               mb: 2, 
               p: 2, 
-              bgcolor: 'rgba(255, 0, 0, 0.1)', 
+              bgcolor: 'rgba(var(--error-rgb), 0.1)', 
               borderRadius: 'var(--border-radius-small)', 
               flexShrink: 0,
               zIndex: 10
@@ -383,7 +393,27 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
               multiline
               rows={4}
               placeholder="Enter your meal suggestion here..."
-              sx={{ mb: 2 }}
+              sx={{ 
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  color: 'var(--text)',
+                  '& fieldset': {
+                    borderColor: 'var(--border)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'var(--primary)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'var(--primary)',
+                  },
+                },
+                '& .MuiInputLabel-root': {
+                  color: 'var(--text-secondary)',
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: 'var(--primary)',
+                },
+              }}
             />
             <Button
               variant="contained"
@@ -393,9 +423,15 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
               fullWidth
               sx={{ 
                 bgcolor: 'var(--accent)',
+                color: 'var(--text)',
                 '&:hover': {
                   bgcolor: 'var(--accent)',
                   opacity: 0.9
+                },
+                '&:disabled': {
+                  bgcolor: 'var(--card-border)',
+                  color: 'var(--text-secondary)',
+                  opacity: 0.5
                 }
               }}
             >
@@ -442,7 +478,7 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
                         bgcolor: 'transparent',
                         transition: 'all 0.2s ease',
                         '&:hover': {
-                          bgcolor: 'rgba(0, 0, 0, 0.05)',
+                          bgcolor: 'rgba(var(--background-rgb), 0.05)',
                           transform: 'translateY(-2px)',
                           boxShadow: 'var(--elevation-1)'
                         }
@@ -513,7 +549,7 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
               disabled={!pinInput}
               sx={{
                 bgcolor: 'var(--accent)',
-                color: 'white',
+                color: 'var(--text)',
                 '&:hover': {
                   bgcolor: 'var(--accent)',
                   opacity: 0.9
@@ -525,6 +561,24 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
           </DialogActions>
         </form>
       </Dialog>
+
+      <ConfirmationDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ open: false, message: '', onConfirm: () => {} })}
+        onConfirm={confirmDialog.onConfirm}
+        title="Delete Suggestion"
+        message={confirmDialog.message}
+        confirmText="Delete"
+        cancelText="Cancel"
+        severity="warning"
+      />
+
+      <AlertSnackbar
+        open={alertSnackbar.open}
+        onClose={() => setAlertSnackbar({ open: false, message: '', severity: 'info' })}
+        message={alertSnackbar.message}
+        severity={alertSnackbar.severity}
+      />
     </>
   );
 };
