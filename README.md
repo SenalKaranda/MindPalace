@@ -556,7 +556,13 @@ We welcome contributions! Here's how to get started:
 
 ## 📄 License
 
-This project is open-source and available under the [MIT License (Non-Commercial, No Resale)](LICENSE). You are free to use, modify, and distribute this software for personal and non-commercial purposes. However, **reselling or commercial distribution is prohibited** without explicit written permission from the copyright holders.
+This project is available under the [Normally Open Public License](LICENSE). Everything not prohibited is permitted.
+
+**Prohibited Purposes:**
+- Commercial use, including selling services based on this software
+- Commercial distribution, including reselling this software
+
+For all other uses, you are free to use, modify, and distribute this software. See the [LICENSE](LICENSE) file for full terms.
 
 ---
 
