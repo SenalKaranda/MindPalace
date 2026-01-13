@@ -348,44 +348,7 @@ const TodoWidget = ({ transparentBackground }) => {
             No todos for this day
           </Typography>
         ) : (
-          <>
-            {undoState.todo && (
-              <Box
-                sx={{
-                  mb: 2,
-                  p: 1.5,
-                  backgroundColor: 'var(--secondary)',
-                  borderRadius: 'var(--border-radius-medium)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  boxShadow: 'var(--elevation-2)'
-                }}
-              >
-                <Typography variant="body2" sx={{ color: 'white', fontWeight: 500 }}>
-                  Todo completed: {undoState.todo.summary}
-                </Typography>
-                <Button
-                  size="small"
-                  variant="contained"
-                  startIcon={<Undo />}
-                  onClick={handleUndo}
-                  sx={{ 
-                    backgroundColor: 'white', 
-                    color: 'var(--secondary)', 
-                    '&:hover': { 
-                      backgroundColor: 'rgba(255,255,255,0.9)',
-                      transform: 'scale(1.02)'
-                    },
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  Undo
-                </Button>
-              </Box>
-            )}
-
-            <List>
+          <List>
               {todos.map((todo) => (
                 <ListItem
                   key={todo.uid}
@@ -480,7 +443,6 @@ const TodoWidget = ({ transparentBackground }) => {
                 </ListItem>
               ))}
             </List>
-          </>
         )}
       </Box>
 
@@ -570,6 +532,59 @@ const TodoWidget = ({ transparentBackground }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Undo Snackbar - Pull-up visual */}
+      <Snackbar
+        open={!!undoState.todo}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        autoHideDuration={5000}
+        onClose={() => {
+          if (undoState.timeout) {
+            clearTimeout(undoState.timeout);
+          }
+          setUndoState({ todo: null, timeout: null });
+        }}
+        sx={{
+          bottom: { xs: 16, sm: 24 },
+          '& .MuiSnackbarContent-root': {
+            backgroundColor: 'var(--secondary)',
+            color: 'white',
+            borderRadius: 'var(--border-radius-medium)',
+            boxShadow: 'var(--elevation-3)',
+            minWidth: 'auto',
+            padding: '8px 16px'
+          }
+        }}
+        message={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CheckCircle sx={{ fontSize: 20 }} />
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              Todo completed: {undoState.todo?.summary}
+            </Typography>
+          </Box>
+        }
+        action={
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<Undo />}
+            onClick={handleUndo}
+            sx={{ 
+              ml: 2,
+              backgroundColor: 'white', 
+              color: 'var(--secondary)', 
+              fontWeight: 'bold',
+              '&:hover': { 
+                backgroundColor: 'rgba(255,255,255,0.9)',
+                transform: 'scale(1.05)'
+              },
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Undo
+          </Button>
+        }
+      />
     </Card>
   );
 };

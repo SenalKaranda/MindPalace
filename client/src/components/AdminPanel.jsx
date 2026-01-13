@@ -109,8 +109,9 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
   const [editingUser, setEditingUser] = useState(null);
   const [editingPrize, setEditingPrize] = useState(null);
   const [newUser, setNewUser] = useState({ username: '', email: '', profile_picture: '' });
-  const [newPrize, setNewPrize] = useState({ name: '', clam_cost: 0 });
+  const [newPrize, setNewPrize] = useState({ name: '', clam_cost: 0, emoji: '' });
   const [prizeMinimumShells, setPrizeMinimumShells] = useState(0);
+  const [bonusChoreClamValue, setBonusChoreClamValue] = useState(1);
   const [uploadedWidgets, setUploadedWidgets] = useState([]);
   const [githubWidgets, setGithubWidgets] = useState([]);
   const [loadingGithub, setLoadingGithub] = useState(false);
@@ -399,6 +400,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     fetchChores();
     fetchPrizes();
     fetchPrizeMinimumShells();
+    fetchBonusChoreClamValue();
     fetchUploadedWidgets();
     fetchCalendarSources();
     fetchDefaultCalendar();
@@ -1007,10 +1009,22 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     try {
       setIsLoading(true);
       if (editingPrize) {
-        await axios.patch(`${getApiUrl()}/api/prizes/${editingPrize.id}`, editingPrize);
+        // Ensure emoji is always included, even if empty
+        const prizeData = {
+          name: editingPrize.name,
+          clam_cost: editingPrize.clam_cost,
+          emoji: editingPrize.emoji || ''
+        };
+        await axios.patch(`${getApiUrl()}/api/prizes/${editingPrize.id}`, prizeData);
       } else {
-        await axios.post(`${getApiUrl()}/api/prizes`, newPrize);
-        setNewPrize({ name: '', clam_cost: 0 });
+        // Ensure emoji is always included, even if empty
+        const prizeData = {
+          name: newPrize.name,
+          clam_cost: newPrize.clam_cost,
+          emoji: newPrize.emoji || ''
+        };
+        await axios.post(`${getApiUrl()}/api/prizes`, prizeData);
+        setNewPrize({ name: '', clam_cost: 0, emoji: '' });
       }
       setEditingPrize(null);
       fetchPrizes();
@@ -1060,6 +1074,36 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
     } catch (error) {
       console.error('Error saving minimum shells setting:', error);
       alert('Failed to save minimum shells setting');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchBonusChoreClamValue = async () => {
+    try {
+      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`);
+      setBonusChoreClamValue(response.data.value ? parseInt(response.data.value) : 1);
+    } catch (error) {
+      console.error('Error fetching bonus chore clam value setting:', error);
+      setBonusChoreClamValue(1);
+    }
+  };
+
+  const saveBonusChoreClamValue = async () => {
+    if (!isAuthenticated) {
+      alert('Admin PIN required to save settings');
+      return;
+    }
+    try {
+      setIsLoading(true);
+      await axios.put(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`, 
+        { value: bonusChoreClamValue },
+        { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
+      );
+      alert('Bonus chore clam value saved successfully');
+    } catch (error) {
+      console.error('Error saving bonus chore clam value setting:', error);
+      alert('Failed to save bonus chore clam value setting');
     } finally {
       setIsLoading(false);
     }
@@ -1143,6 +1187,37 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
       } catch (error) {
         console.error('Error deleting chore:', error);
         alert('Failed to delete chore. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const deleteAllUserChores = async (userId) => {
+    const userChores = chores.filter(chore => chore.user_id === userId);
+    const choreCount = userChores.length;
+    
+    if (choreCount === 0) {
+      alert('This user has no chores to delete.');
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to delete all ${choreCount} chore${choreCount !== 1 ? 's' : ''} for this user? This action cannot be undone.`)) {
+      try {
+        setIsLoading(true);
+        // Delete all chores for this user
+        const deletePromises = userChores.map(chore => 
+          axios.delete(`${getApiUrl()}/api/chores/${chore.id}`)
+        );
+        await Promise.all(deletePromises);
+        fetchChores();
+        if (choreModal.user && choreModal.user.id === userId) {
+          setChoreModal(prev => ({ ...prev, userChores: [] }));
+        }
+        alert(`Successfully deleted ${choreCount} chore${choreCount !== 1 ? 's' : ''}.`);
+      } catch (error) {
+        console.error('Error deleting chores:', error);
+        alert('Failed to delete some chores. Please try again.');
       } finally {
         setIsLoading(false);
       }
@@ -3345,6 +3420,33 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             <Typography variant="h6" gutterBottom>User Management</Typography>
             
             <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
+              <Typography variant="subtitle1" sx={{ mb: 2 }}>Chore Settings</Typography>
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Bonus Chore Clam Value"
+                    type="number"
+                    value={bonusChoreClamValue}
+                    onChange={(e) => setBonusChoreClamValue(parseInt(e.target.value) || 1)}
+                    helperText="Default clam value for bonus chores"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Button
+                    variant="contained"
+                    onClick={saveBonusChoreClamValue}
+                    disabled={!isAuthenticated}
+                    fullWidth
+                    sx={{ height: '56px', mt: 1 }}
+                  >
+                    Save Bonus Chore Value
+                  </Button>
+                </Grid>
+              </Grid>
+            </Box>
+            
+            <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
               <Typography variant="subtitle1" sx={{ mb: 2 }}>Add New User</Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={4}>
@@ -3477,14 +3579,28 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => openChoreModal(user)}
-                          sx={{ minWidth: 'auto' }}
-                        >
-                          {getUserChoreCount(user.id)} chores
-                        </Button>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => openChoreModal(user)}
+                            sx={{ minWidth: 'auto' }}
+                          >
+                            {getUserChoreCount(user.id)} chores
+                          </Button>
+                          {getUserChoreCount(user.id) > 0 && (
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              color="error"
+                              startIcon={<Delete />}
+                              onClick={() => deleteAllUserChores(user.id)}
+                              sx={{ minWidth: 'auto', fontSize: '0.7rem' }}
+                            >
+                              Delete All
+                            </Button>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -3562,7 +3678,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
               <Typography variant="subtitle1" sx={{ mb: 2 }}>Add New Prize</Typography>
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={12} sm={4}>
                   <TextField
                     fullWidth
                     label="Prize Name"
@@ -3571,6 +3687,17 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   />
                 </Grid>
                 <Grid item xs={12} sm={3}>
+                  <TextField
+                    fullWidth
+                    label="Emoji"
+                    value={newPrize.emoji}
+                    onChange={(e) => setNewPrize({ ...newPrize, emoji: e.target.value })}
+                    placeholder="🎁"
+                    helperText="Emoji shown on wheel"
+                    inputProps={{ maxLength: 2 }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={2}>
                   <TextField
                     fullWidth
                     label="Clam Cost"
@@ -3605,6 +3732,14 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                         sx={{ flex: 1 }}
                       />
                       <TextField
+                        label="Emoji"
+                        value={editingPrize.emoji || ''}
+                        onChange={(e) => setEditingPrize({ ...editingPrize, emoji: e.target.value })}
+                        placeholder="🎁"
+                        sx={{ width: 100 }}
+                        inputProps={{ maxLength: 2 }}
+                      />
+                      <TextField
                         label="Clam Cost"
                         type="number"
                         value={editingPrize.clam_cost}
@@ -3621,7 +3756,12 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                   ) : (
                     <>
                       <ListItemText
-                        primary={prize.name}
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {prize.emoji && <span>{prize.emoji}</span>}
+                            <span>{prize.name}</span>
+                          </Box>
+                        }
                         secondary={`Cost: ${prize.clam_cost} 🥟`}
                       />
                       <ListItemSecondaryAction>

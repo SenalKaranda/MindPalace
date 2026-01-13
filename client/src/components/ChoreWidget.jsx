@@ -33,7 +33,7 @@ const ChoreWidget = ({ transparentBackground }) => {
   const [prizes, setPrizes] = useState([]);
   const [editingChore, setEditingChore] = useState(null);
   const [newChore, setNewChore] = useState({
-    user_id: '',
+    user_id: 0, // Default to bonus user (0) instead of empty string
     title: '',
     description: '',
     time_period: 'any-time',
@@ -57,12 +57,20 @@ const ChoreWidget = ({ transparentBackground }) => {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
 
-  // Prize Spinner states
+  // Prize Shop states
   const [selectedUserForPrize, setSelectedUserForPrize] = useState(null);
-  const [spinning, setSpinning] = useState(false);
-  const [selectedPrize, setSelectedPrize] = useState(null);
-  const [spinnerAngle, setSpinnerAngle] = useState(0);
+  const [showPrizeShopModal, setShowPrizeShopModal] = useState(false);
+  const [purchasingPrize, setPurchasingPrize] = useState(null);
+  const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+  const [purchasedPrize, setPurchasedPrize] = useState(null);
   const [prizeMinimumShells, setPrizeMinimumShells] = useState(0);
+  const [bonusChoreClamValue, setBonusChoreClamValue] = useState(1);
+  const [showBonusChoreDialog, setShowBonusChoreDialog] = useState(false);
+  const [newBonusChore, setNewBonusChore] = useState({
+    title: '',
+    description: '',
+    time_period: 'any-time'
+  });
 
   const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const timePeriods = ['morning', 'afternoon', 'evening', 'any-time'];
@@ -78,6 +86,7 @@ const ChoreWidget = ({ transparentBackground }) => {
     fetchChores();
     fetchPrizes();
     fetchPrizeMinimumShells();
+    fetchBonusChoreClamValue();
   }, []);
 
   const fetchPrizeMinimumShells = async () => {
@@ -87,6 +96,16 @@ const ChoreWidget = ({ transparentBackground }) => {
     } catch (error) {
       console.error('Error fetching minimum shells setting:', error);
       setPrizeMinimumShells(0);
+    }
+  };
+
+  const fetchBonusChoreClamValue = async () => {
+    try {
+      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`);
+      setBonusChoreClamValue(response.data.value ? parseInt(response.data.value) : 1);
+    } catch (error) {
+      console.error('Error fetching bonus chore clam value setting:', error);
+      setBonusChoreClamValue(1);
     }
   };
 
@@ -121,6 +140,14 @@ const ChoreWidget = ({ transparentBackground }) => {
       return;
     }
     setShowAddDialog(true);
+  };
+
+  const handleAddBonusChoreClick = () => {
+    if (!isAuthenticated) {
+      setShowPinDialog(true);
+      return;
+    }
+    setShowBonusChoreDialog(true);
   };
 
   // Save showBonusChores preference to localStorage
@@ -171,7 +198,33 @@ const ChoreWidget = ({ transparentBackground }) => {
       const response = await axios.get(`${getApiUrl()}/api/chores`);
       // Ensure response.data is an array
       if (Array.isArray(response.data)) {
-        setChores(response.data);
+        // Normalize user_id values to numbers for consistent filtering
+        const normalizedChores = response.data.map(chore => {
+          // Handle user_id: convert to number, treat null/undefined/empty string as 0
+          let userId = chore.user_id;
+          if (userId === null || userId === undefined || userId === '') {
+            userId = 0;
+          } else {
+            userId = Number(userId);
+            if (isNaN(userId)) userId = 0;
+          }
+          
+          // Normalize clam_value
+          const clamValue = Number(chore.clam_value) || 0;
+          
+          return {
+            ...chore,
+            user_id: userId,
+            clam_value: clamValue
+          };
+        });
+        
+        console.log('Fetched chores:', normalizedChores);
+        console.log('Chores with clam_value > 0:', normalizedChores.filter(c => c.clam_value > 0));
+        console.log('Chores with user_id === 0:', normalizedChores.filter(c => c.user_id === 0));
+        console.log('Bonus chores (clam_value > 0 AND user_id === 0):', 
+          normalizedChores.filter(c => c.clam_value > 0 && c.user_id === 0));
+        setChores(normalizedChores);
       } else {
         console.error('Invalid chores response:', response.data);
         setChores([]);
@@ -237,14 +290,15 @@ const ChoreWidget = ({ transparentBackground }) => {
         await axios.patch(`${getApiUrl()}/api/chores/${editingChore.id}`, editingChore);
       } else {
         for (const day of newChore.assigned_days_of_week) {
-          const choreForDay = {
-            ...newChore,
-            assigned_day_of_week: day
-          };
+            const choreForDay = {
+              ...newChore,
+              assigned_day_of_week: day,
+              user_id: Number(newChore.user_id) || 0
+            };
           await axios.post(`${getApiUrl()}/api/chores`, choreForDay);
         }
         setNewChore({
-          user_id: '',
+          user_id: 0, // Reset to bonus user (0)
           title: '',
           description: '',
           time_period: 'any-time',
@@ -263,27 +317,95 @@ const ChoreWidget = ({ transparentBackground }) => {
     }
   };
 
+  const saveBonusChore = async () => {
+    try {
+      setIsLoading(true);
+      // Bonus chores are a single entry available all 7 days of the week
+      // They don't need a specific day assigned since they're available any day
+      const bonusChore = {
+        ...newBonusChore,
+        user_id: 0, // Always unassigned (bonus user)
+        assigned_day_of_week: 'any', // Special value to indicate available any day
+        repeat_type: 'weekly', // Default repeat type
+        clam_value: bonusChoreClamValue
+      };
+      await axios.post(`${getApiUrl()}/api/chores`, bonusChore);
+      setNewBonusChore({
+        title: '',
+        description: '',
+        time_period: 'any-time'
+      });
+      setShowBonusChoreDialog(false);
+      fetchChores();
+    } catch (error) {
+      console.error('Error saving bonus chore:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getCurrentDay = () => {
     return daysOfWeek[new Date().getDay()];
   };
 
   const getUserChores = (userId, dayOfWeek = null) => {
-    return chores.filter(chore => 
-      chore.user_id === userId && 
-      (dayOfWeek ? chore.assigned_day_of_week === dayOfWeek : true)
-    );
+    return chores.filter(chore => {
+      // Handle type coercion for user_id comparison
+      const choreUserId = Number(chore.user_id);
+      const targetUserId = Number(userId);
+      const userMatches = choreUserId === targetUserId;
+      
+      if (!userMatches) return false;
+      
+      // If filtering by day, include chores for that day OR bonus chores (assigned_day_of_week === 'any')
+      if (dayOfWeek) {
+        return chore.assigned_day_of_week === dayOfWeek || chore.assigned_day_of_week === 'any';
+      }
+      
+      // If not filtering by day, include all chores for the user
+      return true;
+    });
   };
 
   const getBonusChores = () => {
-    return chores.filter(chore => chore.clam_value > 0);
+    // Since chores are already normalized in fetchChores, we can use them directly
+    // But we'll still check to be safe
+    const bonusChores = chores.filter(chore => {
+      // Use the normalized clam_value (already a number from fetchChores)
+      const clamValue = typeof chore.clam_value === 'number' ? chore.clam_value : (Number(chore.clam_value) || 0);
+      return clamValue > 0;
+    });
+    console.log('All bonus chores (clam_value > 0):', bonusChores);
+    console.log('Bonus chores details:', bonusChores.map(c => ({ 
+      id: c.id, 
+      title: c.title, 
+      user_id: c.user_id, 
+      user_id_type: typeof c.user_id,
+      clam_value: c.clam_value,
+      clam_value_type: typeof c.clam_value
+    })));
+    return bonusChores;
   };
 
   const getAvailableBonusChores = () => {
-    return getBonusChores().filter(chore => chore.user_id === 0);
+    const bonusChores = getBonusChores();
+    const available = bonusChores.filter(chore => {
+      // Use the normalized user_id (already a number from fetchChores)
+      const userId = typeof chore.user_id === 'number' ? chore.user_id : (Number(chore.user_id) || 0);
+      const isAvailable = userId === 0;
+      console.log(`Chore ${chore.id} (${chore.title}): user_id=${chore.user_id} (type: ${typeof chore.user_id}, normalized: ${userId}), isAvailable=${isAvailable}`);
+      return isAvailable;
+    });
+    console.log('Available bonus chores:', available);
+    console.log('Available bonus chores count:', available.length);
+    return available;
   };
 
   const getAssignedBonusChores = () => {
-    return getBonusChores().filter(chore => chore.user_id !== 0);
+    return getBonusChores().filter(chore => {
+      // Bonus chores are assigned when user_id is not 0
+      return chore.user_id !== 0;
+    });
   };
 
   const getAffordablePrizes = (userId) => {
@@ -292,63 +414,70 @@ const ChoreWidget = ({ transparentBackground }) => {
     return prizes.filter(prize => user.clam_total >= prize.clam_cost);
   };
 
-  const canUserSpin = (userId) => {
+  const canUserPurchase = (userId, prizeId) => {
     const user = users.find(u => u.id === userId);
-    if (!user) return false;
-    return user.clam_total >= prizeMinimumShells && getAffordablePrizes(userId).length > 0;
+    const prize = prizes.find(p => p.id === prizeId);
+    if (!user || !prize) return false;
+    return user.clam_total >= prize.clam_cost;
   };
 
-  const spinPrizeWheel = async () => {
-    if (!selectedUserForPrize || !canUserSpin(selectedUserForPrize)) {
+  // Empty function for post-purchase actions (to be implemented by user)
+  const onPrizePurchased = async (userId, prizeId, prizeName) => {
+    // TODO: Add custom logic here (e.g., push request to another device on LAN)
+    console.log(`Prize purchased: ${prizeName} by user ${userId}`);
+  };
+
+  const purchasePrize = async (prizeId) => {
+    if (!selectedUserForPrize) {
+      alert('Please select a user first');
       return;
     }
 
-    const affordablePrizes = getAffordablePrizes(selectedUserForPrize);
-    if (affordablePrizes.length === 0) {
-      alert('No affordable prizes available for this user');
+    const prize = prizes.find(p => p.id === prizeId);
+    if (!prize) {
+      alert('Prize not found');
       return;
     }
 
-    setSpinning(true);
-    setSelectedPrize(null);
+    if (!canUserPurchase(selectedUserForPrize, prizeId)) {
+      alert(`Not enough shells! This prize costs ${prize.clam_cost} 🥟`);
+      return;
+    }
 
-    // Randomly select a prize
-    const randomPrize = affordablePrizes[Math.floor(Math.random() * affordablePrizes.length)];
+    setPurchasingPrize(prizeId);
+
+    try {
+      // Call API to deduct shells
+      const response = await axios.post(`${getApiUrl()}/api/prizes/select`, {
+        user_id: selectedUserForPrize,
+        prize_id: prizeId
+      });
+
+      // Close shop modal and open celebration modal
+      setPurchasedPrize(prize);
+      setShowPrizeShopModal(false);
+      setShowCelebrationModal(true);
+      
+      // Refresh user balance
+      fetchUsers();
+    } catch (error) {
+      console.error('Error purchasing prize:', error);
+      alert(error.response?.data?.error || 'Failed to purchase prize');
+      setPurchasingPrize(null);
+    } finally {
+      setPurchasingPrize(null);
+    }
+  };
+
+  const handleCelebrationModalClose = async () => {
+    if (purchasedPrize && selectedUserForPrize) {
+      // Call post-purchase callback when modal is closed
+      await onPrizePurchased(selectedUserForPrize, purchasedPrize.id, purchasedPrize.name);
+    }
     
-    // Calculate rotation angle (multiple full rotations + prize position)
-    const prizeIndex = affordablePrizes.findIndex(p => p.id === randomPrize.id);
-    const prizeAngle = (360 / affordablePrizes.length) * prizeIndex;
-    const fullRotations = 5; // 5 full rotations
-    const finalAngle = fullRotations * 360 + (360 - prizeAngle) + spinnerAngle;
-
-    // Animate spinner
-    setSpinnerAngle(finalAngle);
-
-    // Wait for animation to complete (4 seconds)
-    setTimeout(async () => {
-      try {
-        // Call API to deduct shells
-        const response = await axios.post(`${getApiUrl()}/api/prizes/select`, {
-          user_id: selectedUserForPrize,
-          prize_id: randomPrize.id
-        });
-
-        setSelectedPrize(randomPrize);
-        fetchUsers(); // Refresh user balance
-        
-        // Reset after showing result
-        setTimeout(() => {
-          setSelectedPrize(null);
-          setSpinnerAngle(0);
-        }, 3000);
-      } catch (error) {
-        console.error('Error selecting prize:', error);
-        alert(error.response?.data?.error || 'Failed to select prize');
-        setSpinnerAngle(0);
-      } finally {
-        setSpinning(false);
-      }
-    }, 4000);
+    setShowCelebrationModal(false);
+    setPurchasedPrize(null);
+    setSelectedUserForPrize(null);
   };
 
   const renderUserAvatar = (user) => {
@@ -434,6 +563,15 @@ const ChoreWidget = ({ transparentBackground }) => {
   };
 
   const renderChoreItem = (chore, isEditing = false) => {
+    // For bonus chores (clam_value > 0), show "Any Day" or hide day chip
+    // For regular chores, show the specific day
+    const isBonusChore = chore.clam_value > 0;
+    const dayName = isBonusChore 
+      ? (chore.assigned_day_of_week === 'any' ? 'Any Day' : '')
+      : (chore.assigned_day_of_week 
+          ? chore.assigned_day_of_week.charAt(0).toUpperCase() + chore.assigned_day_of_week.slice(1)
+          : '');
+    
     return (
       <Box
         key={chore.id}
@@ -449,16 +587,31 @@ const ChoreWidget = ({ transparentBackground }) => {
         }}
       >
         <Box sx={{ flex: 1 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: chore.completed ? 'normal' : 'bold', fontSize: '0.85rem' }}>
-            {chore.title}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: chore.completed ? 'normal' : 'bold', fontSize: '0.85rem' }}>
+              {chore.title}
+            </Typography>
+            {dayName && (
+              <Chip
+                label={dayName}
+                size="small"
+                sx={{ 
+                  bgcolor: isBonusChore ? 'var(--accent)' : 'var(--card-border)', 
+                  color: isBonusChore ? 'white' : 'var(--text)',
+                  fontSize: '0.65rem',
+                  height: 20,
+                  fontWeight: 'bold'
+                }}
+              />
+            )}
             {chore.clam_value > 0 && (
               <Chip
                 label={`${chore.clam_value} 🥟`}
                 size="small"
-                sx={{ ml: 1, bgcolor: 'var(--accent)', color: 'white' }}
+                sx={{ bgcolor: 'var(--accent)', color: 'white' }}
               />
             )}
-          </Typography>
+          </Box>
           {chore.description && (
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
               {chore.description}
@@ -581,8 +734,17 @@ const ChoreWidget = ({ transparentBackground }) => {
             </Button>
             <Button
               startIcon={<Add />}
-              onClick={handleAddChoreClick}
+              onClick={handleAddBonusChoreClick}
               variant="contained"
+              size="small"
+              sx={{ bgcolor: 'var(--accent)' }}
+            >
+              Add Bonus Chore
+            </Button>
+            <Button
+              startIcon={<Add />}
+              onClick={handleAddChoreClick}
+              variant="outlined"
               size="small"
             >
               Add Chore
@@ -690,9 +852,18 @@ const ChoreWidget = ({ transparentBackground }) => {
                   minHeight: 0, 
                   overflow: 'auto',
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(200px, 25%, 300px), 1fr))',
+                  // Force at least 2 columns by capping max column width at ~50% (minus gap)
+                  // Without 1fr, columns are capped at 50% width, ensuring at least 2 columns
+                  gridTemplateColumns: {
+                    xs: 'repeat(auto-fill, minmax(200px, calc(50% - 0.5rem)))',
+                    sm: 'repeat(auto-fill, minmax(200px, calc(50% - 0.75rem)))',
+                    md: 'repeat(auto-fill, minmax(200px, calc(50% - 1rem)))'
+                  },
+                  gridAutoRows: 'minmax(120px, auto)',
                   gap: 'var(--spacing-md)',
-                  pb: 2
+                  pb: 2,
+                  // Ensure minimum 2 rows by setting min-height to accommodate 2 rows
+                  minHeight: 'calc(2 * (120px + 1rem))'
                 }}>
                   {availableBonusChores.map(chore => (
                     <Box
@@ -781,7 +952,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               fontSize: '0.9rem', 
               fontWeight: 'bold' 
             }}>
-              🛍️ Prize Spinner
+              🛍️ Prize Shop
             </Typography>
             <Box sx={{ 
               flex: 1, 
@@ -794,24 +965,23 @@ const ChoreWidget = ({ transparentBackground }) => {
               pb: 2,
               px: 2
             }}>
-              {selectedPrize ? (
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" sx={{ mb: 2, color: 'var(--accent)', fontWeight: 'bold' }}>
-                    🎉 Congratulations! 🎉
-                  </Typography>
-                  <Typography variant="h6" sx={{ mb: 1 }}>
-                    {selectedPrize.name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Cost: {selectedPrize.clam_cost} 🥟
-                  </Typography>
-                </Box>
-              ) : (
-                <>
+              <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: 'row', 
+                  gap: 3,
+                  alignItems: 'flex-start',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                  width: '100%'
+                }}>
                   {/* User Selection - Circular Buttons */}
-                  <Box sx={{ mb: 2, width: '100%', maxWidth: 400 }}>
+                  <Box sx={{ 
+                    flex: '0 1 auto',
+                    minWidth: 200,
+                    maxWidth: 400
+                  }}>
                     <Typography variant="body2" sx={{ mb: 1.5, textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      Select User to Spin
+                      Select User to Shop
                     </Typography>
                     <Box sx={{ 
                       display: 'flex', 
@@ -822,7 +992,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                     }}>
                       {users.filter(user => user.id !== 0).map(user => {
                         const affordableCount = getAffordablePrizes(user.id).length;
-                        const canSpin = canUserSpin(user.id);
+                        const canPurchase = getAffordablePrizes(user.id).length > 0 && user.clam_total >= prizeMinimumShells;
                         const isSelected = selectedUserForPrize === user.id;
                         
                         // Render smaller avatar for prize spinner
@@ -898,10 +1068,15 @@ const ChoreWidget = ({ transparentBackground }) => {
                               display: 'flex',
                               flexDirection: 'column',
                               alignItems: 'center',
-                              cursor: canSpin ? 'pointer' : 'not-allowed',
-                              opacity: canSpin ? 1 : 0.5
+                              cursor: canPurchase ? 'pointer' : 'not-allowed',
+                              opacity: canPurchase ? 1 : 0.5
                             }}
-                            onClick={() => canSpin && setSelectedUserForPrize(user.id)}
+                            onClick={() => {
+                              if (canPurchase) {
+                                setSelectedUserForPrize(user.id);
+                                setShowPrizeShopModal(true);
+                              }
+                            }}
                           >
                             <Box
                               sx={{
@@ -911,7 +1086,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                                 p: 0.5,
                                 bgcolor: isSelected ? 'rgba(var(--accent-rgb), 0.1)' : 'transparent',
                                 transition: 'all 0.2s ease',
-                                '&:hover': canSpin ? {
+                                '&:hover': canPurchase ? {
                                   borderColor: 'var(--accent)',
                                   transform: 'scale(1.05)'
                                 } : {}
@@ -940,11 +1115,11 @@ const ChoreWidget = ({ transparentBackground }) => {
                                 mt: 0.5,
                                 fontSize: '0.65rem',
                                 height: 20,
-                                bgcolor: canSpin ? 'var(--accent)' : 'var(--card-border)',
-                                color: canSpin ? 'white' : 'var(--text-secondary)'
+                                bgcolor: canPurchase ? 'var(--accent)' : 'var(--card-border)',
+                                color: canPurchase ? 'white' : 'var(--text-secondary)'
                               }}
                             />
-                            {!canSpin && (
+                            {!canPurchase && (
                               <Typography 
                                 variant="caption" 
                                 sx={{ 
@@ -964,135 +1139,12 @@ const ChoreWidget = ({ transparentBackground }) => {
                     </Box>
                   </Box>
 
-                  {selectedUserForPrize && (
-                    <>
-                      {getAffordablePrizes(selectedUserForPrize).length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                          No affordable prizes for this user
-                        </Typography>
-                      ) : (
-                        <>
-                          {/* Spinner Wheel */}
-                          <Box sx={{ 
-                            position: 'relative', 
-                            width: 200, 
-                            height: 200, 
-                            mb: 2,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <Box
-                              sx={{
-                                position: 'relative',
-                                width: 200,
-                                height: 200,
-                                borderRadius: '50%',
-                                border: '4px solid var(--accent)',
-                                overflow: 'hidden',
-                                transform: `rotate(${spinnerAngle}deg)`,
-                                transition: spinning ? 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none',
-                                bgcolor: 'var(--card-bg)'
-                              }}
-                            >
-                              {getAffordablePrizes(selectedUserForPrize).map((prize, index) => {
-                                const totalPrizes = getAffordablePrizes(selectedUserForPrize).length;
-                                const angle = (360 / totalPrizes) * index;
-                                const prizeAngle = (360 / totalPrizes);
-                                const centerAngle = angle + (prizeAngle / 2);
-                                return (
-                                  <Box
-                                    key={prize.id}
-                                    sx={{
-                                      position: 'absolute',
-                                      top: '50%',
-                                      left: '50%',
-                                      width: '50%',
-                                      height: '50%',
-                                      transformOrigin: '0 0',
-                                      transform: `rotate(${angle}deg)`,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'flex-start',
-                                      borderRight: '1px solid var(--card-border)',
-                                      bgcolor: index % 2 === 0 ? 'rgba(var(--accent-rgb), 0.15)' : 'rgba(var(--accent-rgb), 0.08)',
-                                      overflow: 'hidden'
-                                    }}
-                                  >
-                                    <Typography
-                                      variant="caption"
-                                      sx={{
-                                        transform: `rotate(${centerAngle}deg) translateY(-70px)`,
-                                        transformOrigin: '0 0',
-                                        fontSize: 'clamp(0.6rem, 1.2vw, 0.75rem)',
-                                        fontWeight: 'bold',
-                                        textAlign: 'center',
-                                        px: 0.5,
-                                        color: 'var(--text)',
-                                        whiteSpace: 'nowrap',
-                                        textOverflow: 'ellipsis',
-                                        maxWidth: '80px',
-                                        overflow: 'hidden'
-                                      }}
-                                    >
-                                      {prize.name.length > 12 ? prize.name.substring(0, 10) + '...' : prize.name}
-                                    </Typography>
-                                  </Box>
-                                );
-                              })}
-                            </Box>
-                            {/* Pointer */}
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                top: -10,
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                width: 0,
-                                height: 0,
-                                borderLeft: '10px solid transparent',
-                                borderRight: '10px solid transparent',
-                                borderTop: '20px solid var(--accent)',
-                                zIndex: 10
-                              }}
-                            />
-                          </Box>
-
-                          {/* Spin Button */}
-                          <Button
-                            variant="contained"
-                            onClick={spinPrizeWheel}
-                            disabled={spinning || !canUserSpin(selectedUserForPrize)}
-                            sx={{
-                              bgcolor: 'var(--accent)',
-                              color: 'white',
-                              fontWeight: 'bold',
-                              px: 4,
-                              py: 1.5,
-                              '&:hover': {
-                                bgcolor: 'var(--accent)',
-                                opacity: 0.9
-                              },
-                              '&:disabled': {
-                                bgcolor: 'var(--card-border)',
-                                color: 'var(--text-secondary)'
-                              }
-                            }}
-                          >
-                            {spinning ? 'Spinning...' : 'Spin! 🎰'}
-                          </Button>
-                        </>
-                      )}
-                    </>
-                  )}
-
                   {!selectedUserForPrize && (
-                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                      Select a user to spin for prizes
+                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4, width: '100%' }}>
+                      Select a user to shop for prizes
                     </Typography>
                   )}
-                </>
-              )}
+                </Box>
             </Box>
           </Box>
         </Box>
@@ -1119,7 +1171,10 @@ const ChoreWidget = ({ transparentBackground }) => {
               <InputLabel>Assign to User</InputLabel>
               <Select
                 value={newChore.user_id}
-                onChange={(e) => setNewChore({...newChore, user_id: e.target.value})}
+                onChange={(e) => {
+                  const userId = Number(e.target.value);
+                  setNewChore({...newChore, user_id: userId});
+                }}
               >
                 <MenuItem value={0}>Bonus Chore (Unassigned)</MenuItem>
                 {users.map(user => (
@@ -1199,6 +1254,56 @@ const ChoreWidget = ({ transparentBackground }) => {
           </DialogActions>
         </Dialog>
 
+        {/* Bonus Chore Dialog */}
+        <Dialog open={showBonusChoreDialog} onClose={() => setShowBonusChoreDialog(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Add New Bonus Chore</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
+              Bonus chores are available 7 days a week and will be awarded {bonusChoreClamValue} 🥟 when completed.
+            </Typography>
+            <TextField
+              fullWidth
+              label="Title"
+              value={newBonusChore.title}
+              onChange={(e) => setNewBonusChore({...newBonusChore, title: e.target.value})}
+              sx={{ mb: 2, mt: 1 }}
+            />
+            <TextField
+              fullWidth
+              label="Description"
+              value={newBonusChore.description}
+              onChange={(e) => setNewBonusChore({...newBonusChore, description: e.target.value})}
+              sx={{ mb: 2 }}
+            />
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Time Period</InputLabel>
+              <Select
+                value={newBonusChore.time_period}
+                onChange={(e) => setNewBonusChore({...newBonusChore, time_period: e.target.value})}
+              >
+                {timePeriods.map(period => (
+                  <MenuItem key={period} value={period}>
+                    {period.charAt(0).toUpperCase() + period.slice(1).replace('-', ' ')}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+              Clam Value: {bonusChoreClamValue} 🥟 (configured in Admin Panel)
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowBonusChoreDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={saveBonusChore} 
+              variant="contained"
+              disabled={!newBonusChore.title}
+            >
+              Add Bonus Chore
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         {/* PIN Dialog */}
         <Dialog
           open={showPinDialog}
@@ -1242,6 +1347,247 @@ const ChoreWidget = ({ transparentBackground }) => {
               </Button>
             </DialogActions>
           </form>
+        </Dialog>
+
+        {/* Prize Shop Modal */}
+        <Dialog
+          open={showPrizeShopModal}
+          onClose={() => {
+            setShowPrizeShopModal(false);
+            setSelectedUserForPrize(null);
+            setShowCelebration(false);
+            setPurchasedPrize(null);
+          }}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              bgcolor: 'var(--card-bg)',
+              border: '1px solid var(--card-border)',
+              maxHeight: '90vh'
+            }
+          }}
+        >
+          <DialogTitle sx={{ 
+            borderBottom: '2px solid var(--accent)',
+            pb: 2,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              🛍️ Prize Shop
+            </Typography>
+            {selectedUserForPrize && (
+              <Typography variant="body2" color="text.secondary">
+                {users.find(u => u.id === selectedUserForPrize)?.username} - {users.find(u => u.id === selectedUserForPrize)?.clam_total || 0} 🥟
+              </Typography>
+            )}
+          </DialogTitle>
+          <DialogContent sx={{ p: 3 }}>
+              <Box sx={{ 
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: 2,
+                maxHeight: '60vh',
+                overflowY: 'auto',
+                p: 1,
+                '@media (max-width: 900px)': {
+                  gridTemplateColumns: 'repeat(4, 1fr)'
+                },
+                '@media (max-width: 700px)': {
+                  gridTemplateColumns: 'repeat(3, 1fr)'
+                },
+                '@media (max-width: 500px)': {
+                  gridTemplateColumns: 'repeat(2, 1fr)'
+                }
+              }}>
+                {prizes.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ 
+                    textAlign: 'center', 
+                    py: 4,
+                    gridColumn: '1 / -1'
+                  }}>
+                    No prizes available
+                  </Typography>
+                ) : (
+                  prizes.map((prize) => {
+                    const canPurchase = selectedUserForPrize ? canUserPurchase(selectedUserForPrize, prize.id) : false;
+                    const isPurchasing = purchasingPrize === prize.id;
+                    
+                    return (
+                      <Box
+                        key={prize.id}
+                        sx={{
+                          border: '2px solid',
+                          borderColor: canPurchase ? 'var(--accent)' : 'var(--card-border)',
+                          borderRadius: 2,
+                          p: 2,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          gap: 1,
+                          bgcolor: canPurchase ? 'rgba(var(--accent-rgb), 0.05)' : 'rgba(0,0,0,0.02)',
+                          opacity: canPurchase ? 1 : 0.6,
+                          transition: 'all 0.2s ease',
+                          position: 'relative'
+                        }}
+                      >
+                        <Box sx={{ 
+                          fontSize: '3rem',
+                          mb: 0.5,
+                          filter: canPurchase ? 'none' : 'grayscale(100%)',
+                          transition: 'transform 0.2s ease'
+                        }}>
+                          {(prize.emoji && prize.emoji.trim()) ? prize.emoji : '🎁'}
+                        </Box>
+                        <Typography variant="subtitle2" sx={{ 
+                          fontWeight: 'bold',
+                          textAlign: 'center',
+                          fontSize: '0.85rem'
+                        }}>
+                          {prize.name}
+                        </Typography>
+                        <Chip
+                          label={`${prize.clam_cost} 🥟`}
+                          size="small"
+                          sx={{
+                            bgcolor: canPurchase ? 'var(--accent)' : 'var(--card-border)',
+                            color: canPurchase ? 'white' : 'var(--text-secondary)',
+                            fontWeight: 'bold',
+                            fontSize: '0.75rem'
+                          }}
+                        />
+                        {!canPurchase && selectedUserForPrize && (
+                          <Typography variant="caption" sx={{ 
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.65rem',
+                            textAlign: 'center',
+                            mt: -0.5
+                          }}>
+                            Not enough shells
+                          </Typography>
+                        )}
+                        <Button
+                          variant="contained"
+                          size="small"
+                          disabled={!canPurchase || isPurchasing}
+                          onClick={() => !isPurchasing && purchasePrize(prize.id)}
+                          sx={{
+                            mt: 1,
+                            width: '100%',
+                            bgcolor: canPurchase ? 'var(--accent)' : 'var(--card-border)',
+                            color: canPurchase ? 'white' : 'var(--text-secondary)',
+                            fontWeight: 'bold',
+                            fontSize: '0.75rem',
+                            '&:hover': canPurchase ? {
+                              bgcolor: 'var(--accent)',
+                              opacity: 0.9
+                            } : {},
+                            '&:disabled': {
+                              bgcolor: 'var(--card-border)',
+                              color: 'var(--text-secondary)'
+                            }
+                          }}
+                        >
+                          {isPurchasing ? 'Purchasing...' : 'Purchase'}
+                        </Button>
+                        {isPurchasing && (
+                          <CircularProgress 
+                            size={20} 
+                            sx={{ 
+                              position: 'absolute',
+                              top: 8,
+                              right: 8
+                            }} 
+                          />
+                        )}
+                      </Box>
+                    );
+                  })
+                )}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ p: 2, borderTop: '1px solid var(--card-border)' }}>
+            <Button 
+              onClick={() => {
+                setShowPrizeShopModal(false);
+                setSelectedUserForPrize(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Celebration Modal */}
+        <Dialog
+          open={showCelebrationModal}
+          onClose={handleCelebrationModalClose}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              bgcolor: 'var(--card-bg)',
+              border: '1px solid var(--card-border)'
+            }
+          }}
+        >
+          <DialogContent sx={{ p: 4, textAlign: 'center' }}>
+            <Typography variant="h4" sx={{ 
+              mb: 2, 
+              color: 'var(--accent)', 
+              fontWeight: 'bold',
+              animation: 'pulse 0.5s ease-in-out infinite',
+              '@keyframes pulse': {
+                '0%, 100%': { transform: 'scale(1)' },
+                '50%': { transform: 'scale(1.1)' }
+              }
+            }}>
+              🎉 Congratulations! 🎉
+            </Typography>
+            <Box sx={{ 
+              fontSize: '5rem',
+              mb: 2,
+              animation: 'bounce 0.6s ease-in-out 3',
+              '@keyframes bounce': {
+                '0%, 100%': { transform: 'translateY(0) scale(1)' },
+                '50%': { transform: 'translateY(-20px) scale(1.2)' }
+              }
+            }}>
+              {purchasedPrize && (purchasedPrize.emoji && purchasedPrize.emoji.trim()) ? purchasedPrize.emoji : '🎁'}
+            </Box>
+            {purchasedPrize && (
+              <>
+                <Typography variant="h5" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  {purchasedPrize.name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Purchased for {purchasedPrize.clam_cost} 🥟
+                </Typography>
+              </>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ p: 2, justifyContent: 'center', borderTop: '1px solid var(--card-border)' }}>
+            <Button 
+              variant="contained"
+              onClick={handleCelebrationModalClose}
+              sx={{
+                bgcolor: 'var(--accent)',
+                color: 'white',
+                fontWeight: 'bold',
+                px: 4,
+                '&:hover': {
+                  bgcolor: 'var(--accent)',
+                  opacity: 0.9
+                }
+              }}
+            >
+              Close
+            </Button>
+          </DialogActions>
         </Dialog>
 
       <Backdrop

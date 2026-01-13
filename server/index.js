@@ -666,7 +666,8 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS prizes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        clam_cost INTEGER NOT NULL
+        clam_cost INTEGER NOT NULL,
+        emoji TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS calendar_sources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -876,6 +877,20 @@ async function initializeDatabase() {
       }
     } catch (calendarMigrationError) {
       console.error('Calendar migration error:', calendarMigrationError);
+    }
+
+    // Migration: Add emoji column to prizes table
+    try {
+      const columns = newDb.prepare("PRAGMA table_info(prizes)").all();
+      const hasEmoji = columns.some(col => col.name === 'emoji');
+      
+      if (!hasEmoji) {
+        console.log('Adding emoji column to prizes table...');
+        newDb.exec('ALTER TABLE prizes ADD COLUMN emoji TEXT DEFAULT ""');
+        console.log('Emoji column added to prizes table.');
+      }
+    } catch (migrationError) {
+      console.error('Migration error adding emoji column:', migrationError);
     }
 
     return newDb; // Return the new database instance
@@ -1584,13 +1599,13 @@ fastify.get('/api/prizes', async (request, reply) => {
 });
 
 fastify.post('/api/prizes', async (request, reply) => {
-  const { name, clam_cost } = request.body;
+  const { name, clam_cost, emoji } = request.body;
   if (!name || !clam_cost || clam_cost <= 0) {
     return reply.status(400).send({ error: 'Prize name and a positive clam cost are required.' });
   }
   try {
-    const stmt = db.prepare('INSERT INTO prizes (name, clam_cost) VALUES (?, ?)');
-    const info = stmt.run(name, clam_cost);
+    const stmt = db.prepare('INSERT INTO prizes (name, clam_cost, emoji) VALUES (?, ?, ?)');
+    const info = stmt.run(name, clam_cost, emoji || '');
     return { id: info.lastInsertRowid };
   } catch (error) {
     console.error('Error adding prize:', error);
@@ -1600,13 +1615,13 @@ fastify.post('/api/prizes', async (request, reply) => {
 
 fastify.patch('/api/prizes/:id', async (request, reply) => {
   const { id } = request.params;
-  const { name, clam_cost } = request.body;
+  const { name, clam_cost, emoji } = request.body;
   if (!name || !clam_cost || clam_cost <= 0) {
     return reply.status(400).send({ error: 'Prize name and a positive clam cost are required.' });
   }
   try {
-    const stmt = db.prepare('UPDATE prizes SET name = ?, clam_cost = ? WHERE id = ?');
-    const info = stmt.run(name, clam_cost, id);
+    const stmt = db.prepare('UPDATE prizes SET name = ?, clam_cost = ?, emoji = ? WHERE id = ?');
+    const info = stmt.run(name, clam_cost, emoji || '', id);
     if (info.changes === 0) {
       return reply.status(404).send({ error: 'Prize not found' });
     }
