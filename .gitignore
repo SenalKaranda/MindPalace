@@ -1,0 +1,66 @@
+# Environment variables (sensitive)
+.env
+**/.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Database files (contains user data, chores, meals, etc.)
+/server/data/*.db
+/server/data/*.db-journal
+/server/data/*.db-wal
+/server/data/*.db-shm
+
+# Cache directories
+/server/cache/
+**/cache/
+
+# User uploads (profile pictures, custom widgets)
+/server/uploads/
+**/uploads/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# Package manager lock files (optional - uncomment if you want to ignore them)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
