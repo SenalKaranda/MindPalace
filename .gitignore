@@ -18,16 +18,21 @@ yarn-error.log*
 lerna-debug.log*
 
 # Database files (contains user data, chores, meals, etc.)
-/server/data/*.db
-/server/data/*.db-journal
-/server/data/*.db-wal
-/server/data/*.db-shm
+/server/data/
 
-# Cache directories
+# Also ignore any database files in other locations (backups, exports, etc.)
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+**/*.sqlite3
+
+# Cache directories (contains cached photos and other personal data)
 /server/cache/
 **/cache/
 
-# User uploads (profile pictures, custom widgets)
+# User uploads (profile pictures, custom widgets, user-generated content)
 /server/uploads/
 **/uploads/
 
