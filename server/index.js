@@ -4557,10 +4557,11 @@ const start = async () => {
     console.log('Chores pruned and reset');
     
     const port = process.env.PORT || 5000;
+    const host = process.env.HOST || 'localhost';
     console.log(`Starting server on port ${port}...`);
-    await fastify.listen({ port: port, host: '0.0.0.0' });
+    await fastify.listen({ port: port, host: host });
     console.log(`✓ Server running on port ${port}`);
-    console.log(`✓ API available at http://0.0.0.0:${port}/api`);
+    console.log(`✓ API available at http://${host}:${port}/api`);
     console.log('=== SERVER READY ===');
   } catch (err) {
     console.error('=== SERVER STARTUP ERROR ===');

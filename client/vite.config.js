@@ -5,12 +5,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3001,
-    host: '0.0.0.0',
+    host: process.env.VITE_HOST || 'localhost',
     watch: {
       usePolling: true, // Required for Docker volume mounts
     },
     hmr: {
-      host: 'localhost', // Change this to your server IP if accessing remotely
+      host: process.env.VITE_HOST || 'localhost',
       port: 3001,
     },
   },

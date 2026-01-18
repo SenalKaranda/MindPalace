@@ -62,6 +62,7 @@ Everything is organized visually, making it easy to see what's happening in your
    Create `server/.env`:
    ```env
    PORT=5000
+   HOST=localhost
    ADMIN_PIN=1234
    ```
    
@@ -69,7 +70,10 @@ Everything is organized visually, making it easy to see what's happening in your
    ```env
    VITE_REACT_APP_API_URL=http://localhost:5000
    VITE_OPENWEATHER_API_KEY=your_key_here
+   VITE_HOST=localhost
    ```
+   
+   **Note:** By default, both server and client listen on `localhost` (only accessible from the same machine). To allow access from other devices on your local network, set `HOST=0.0.0.0` in `server/.env` and `VITE_HOST=0.0.0.0` in `client/.env`.
 
 5. **Start the Application**
    
@@ -283,6 +287,7 @@ MindPalace uses **CalDAV REPORT requests** for efficient calendar queries. This 
 #### Backend (`server/.env`)
 ```env
 PORT=5000                    # Backend server port
+HOST=localhost              # Network interface to bind to (localhost = 127.0.0.1, 0.0.0.0 = all interfaces/LAN access)
 ADMIN_PIN=1234              # PIN for admin actions (change this!)
 ENCRYPTION_KEY=your-key     # For encrypting calendar passwords (32+ bytes)
 ```
@@ -291,7 +296,15 @@ ENCRYPTION_KEY=your-key     # For encrypting calendar passwords (32+ bytes)
 ```env
 VITE_REACT_APP_API_URL=http://localhost:5000
 VITE_OPENWEATHER_API_KEY=your_openweather_api_key
+VITE_HOST=localhost         # Network interface for dev server (localhost = 127.0.0.1, 0.0.0.0 = all interfaces/LAN access)
 ```
+
+**Network Access Configuration:**
+- **Default (`localhost`)**: Only accessible from the same machine (more secure)
+- **LAN Access (`0.0.0.0`)**: Accessible from other devices on your local network
+  - Set `HOST=0.0.0.0` in `server/.env` to allow LAN access to the backend
+  - Set `VITE_HOST=0.0.0.0` in `client/.env` to allow LAN access to the frontend dev server
+  - **Note:** When using `0.0.0.0`, you can access the app from other devices using your machine's local IP address (e.g., `http://192.168.1.100:5000` for backend, `http://192.168.1.100:3001` for frontend)
 
 ### Port Configuration
 
