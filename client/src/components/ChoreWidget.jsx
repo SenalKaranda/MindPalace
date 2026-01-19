@@ -26,7 +26,6 @@ import {
   Card
 } from '@mui/material';
 import { Edit, Save, Cancel, Add, Delete, Check, Undo } from '@mui/icons-material';
-import axios from 'axios';
 
 const ChoreWidget = ({ transparentBackground }) => {
   const [users, setUsers] = useState([]);
