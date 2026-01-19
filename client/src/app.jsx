@@ -84,10 +84,27 @@ class ErrorBoundary extends React.Component {
 }
 
 const App = () => {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('theme');
+      if (saved) {
+        return saved;
+      }
+      // Fallback to system preference if localStorage is empty
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (error) {
+      console.error('Error reading theme from localStorage:', error);
+      return 'light';
+    }
+  });
   const [widgetsLocked, setWidgetsLocked] = useState(() => {
-    const saved = localStorage.getItem('widgetsLocked');
-    return saved !== null ? JSON.parse(saved) : true; // Default to locked
+    try {
+      const saved = localStorage.getItem('widgetsLocked');
+      return saved !== null ? JSON.parse(saved) : true; // Default to locked
+    } catch (error) {
+      console.error('Error reading widgetsLocked from localStorage:', error);
+      return true; // Default to locked
+    }
   });
   const [widgetSettings, setWidgetSettings] = useState(() => {
     const defaultSettings = {
@@ -132,6 +149,10 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error parsing widget settings from localStorage:', error);
+      // If localStorage is not available, log a warning but continue with defaults
+      if (error.name === 'QuotaExceededError' || error.name === 'SecurityError') {
+        console.warn('localStorage is not available. Settings will not persist.');
+      }
     }
     return defaultSettings;
   });
@@ -166,6 +187,63 @@ const App = () => {
 
   useEffect(() => {
     refreshApiKeys();
+  }, []);
+
+  // Initialize localStorage with defaults on first load if they don't exist
+  useEffect(() => {
+    try {
+      // Initialize theme if not present
+      if (!localStorage.getItem('theme')) {
+        const defaultTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        localStorage.setItem('theme', defaultTheme);
+        console.log('[App] Initialized theme in localStorage:', defaultTheme);
+        // Update state to reflect the saved default
+        setTheme(defaultTheme);
+      }
+
+      // Initialize widgetsLocked if not present
+      if (!localStorage.getItem('widgetsLocked')) {
+        const defaultLocked = true;
+        localStorage.setItem('widgetsLocked', JSON.stringify(defaultLocked));
+        console.log('[App] Initialized widgetsLocked in localStorage: true');
+        // Update state to reflect the saved default
+        setWidgetsLocked(defaultLocked);
+      }
+
+      // Initialize widgetSettings if not present
+      if (!localStorage.getItem('widgetSettings')) {
+        const defaultSettings = {
+          chores: { enabled: false, transparent: false },
+          calendar: { enabled: false, transparent: false },
+          photos: { enabled: false, transparent: false },
+          weather: { enabled: false, transparent: false },
+          todos: { enabled: false, transparent: false },
+          notes: { enabled: false, transparent: false },
+          groceryList: { enabled: false, transparent: false },
+          mealPlanner: { enabled: false, transparent: false },
+          mealSuggestionBox: { enabled: false, transparent: false },
+          widgetGallery: { enabled: true, transparent: false },
+          lightGradientStart: '#00ddeb',
+          lightGradientEnd: '#ff6b6b',
+          darkGradientStart: '#2e2767',
+          darkGradientEnd: '#620808',
+          lightButtonGradientStart: '#00ddeb',
+          lightButtonGradientEnd: '#ff6b6b',
+          darkButtonGradientStart: '#2e2767',
+          darkButtonGradientEnd: '#620808',
+        };
+        localStorage.setItem('widgetSettings', JSON.stringify(defaultSettings));
+        console.log('[App] Initialized widgetSettings in localStorage');
+        // Update state to reflect the saved defaults
+        setWidgetSettings(defaultSettings);
+      }
+    } catch (error) {
+      console.error('[App] Error initializing localStorage defaults:', error);
+      // If localStorage is not available (e.g., private browsing), log a warning
+      if (error.name === 'QuotaExceededError' || error.name === 'SecurityError') {
+        console.warn('[App] localStorage is not available. Settings will not persist across sessions.');
+      }
+    }
   }, []);
 
   useEffect(() => {
