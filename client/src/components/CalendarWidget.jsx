@@ -4,7 +4,7 @@ import { ViewModule, ViewWeek, ViewDay, ViewAgenda, CalendarMonth, ChevronLeft, 
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import axios from 'axios';
-import { getApiUrl } from '../utils/api.js';
+import { getApiUrl, cachedGet, post } from '../utils/api.js';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const localizer = momentLocalizer(moment);
@@ -41,8 +41,8 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
   // Load calendar settings from API
   const loadCalendarSettings = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings`);
-      const settings = response.data;
+      const response = await cachedGet('/api/settings');
+      const settings = response.data || response;
       setEventColors({
         backgroundColor: settings.CALENDAR_EVENT_BACKGROUND_COLOR || 'var(--primary)',
         textColor: settings.CALENDAR_EVENT_TEXT_COLOR || 'var(--text)'
@@ -85,11 +85,11 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
 
     const saveToDatabase = async () => {
       try {
-        await axios.post(`${getApiUrl()}/api/settings`, {
+        await post('/api/settings', {
           key: 'CALENDAR_TEXT_SIZE',
           value: displaySettings.textSize.toString()
         });
-        await axios.post(`${getApiUrl()}/api/settings`, {
+        await post('/api/settings', {
           key: 'CALENDAR_BULLET_SIZE',
           value: displaySettings.bulletSize.toString()
         });
@@ -105,7 +105,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
   useEffect(() => {
     const loadDisplaySettings = async () => {
       try {
-        const response = await axios.get(`${getApiUrl()}/api/settings`);
+        const response = await cachedGet('/api/settings');
         const settings = response.data;
 
         if (settings.CALENDAR_TEXT_SIZE || settings.CALENDAR_BULLET_SIZE) {
@@ -125,7 +125,7 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
   // Calendar sources are now managed in Admin Panel - we only fetch for display purposes
   const fetchCalendarSources = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/calendar-sources`);
+      const response = await cachedGet('/api/calendar-sources');
       if (Array.isArray(response.data)) {
         setCalendarSources(response.data);
       } else {

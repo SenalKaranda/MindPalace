@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Typography, Box, IconButton, CircularProgress, Alert, Chip, Card } from '@mui/material';
 import { Refresh, ChevronLeft, ChevronRight, PlayArrow, Pause } from '@mui/icons-material';
 import axios from 'axios';
-import { getApiUrl } from '../utils/api.js';
+import { getApiUrl, cachedGet } from '../utils/api.js';
 
 const PhotoWidget = ({ transparentBackground }) => {
   const [photos, setPhotos] = useState([]);
@@ -43,7 +43,7 @@ const PhotoWidget = ({ transparentBackground }) => {
 
   const loadPreferences = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings`);
+      const response = await cachedGet('/api/settings');
       const settings = response.data;
 
       if (settings.PHOTO_WIDGET_MAX_PHOTOS_PER_VIEW) {
@@ -345,7 +345,7 @@ const PhotoWidget = ({ transparentBackground }) => {
 
   const fetchPhotoSources = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/photo-sources`);
+      const response = await cachedGet('/api/photo-sources');
       // Ensure response.data is an array before setting
       if (Array.isArray(response.data)) {
         setPhotoSources(response.data);
@@ -364,7 +364,7 @@ const PhotoWidget = ({ transparentBackground }) => {
       setLoading(true);
       setError(null);
 
-      const response = await axios.get(`${getApiUrl()}/api/photo-items`);
+      const response = await cachedGet('/api/photo-items');
 
       if (Array.isArray(response.data)) {
         setPhotos(response.data);

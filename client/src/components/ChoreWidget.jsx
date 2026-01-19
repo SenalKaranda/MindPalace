@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getApiUrl } from '../utils/api.js';
+import axios from 'axios';
+import { getApiUrl, cachedGet, post } from '../utils/api.js';
 import {
   Typography,
   Button,
@@ -182,12 +183,13 @@ const ChoreWidget = ({ transparentBackground }) => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/users`);
+      const response = await cachedGet('/api/users');
+      const data = response.data || response;
       // Ensure response.data is an array before filtering
-      if (Array.isArray(response.data)) {
-        setUsers(response.data.filter(user => user.id !== 0));
+      if (Array.isArray(data)) {
+        setUsers(data.filter(user => user.id !== 0));
       } else {
-        console.error('Invalid users response:', response.data);
+        console.error('Invalid users response:', data);
         setUsers([]);
       }
     } catch (error) {
@@ -198,11 +200,12 @@ const ChoreWidget = ({ transparentBackground }) => {
 
   const fetchChores = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/chores`);
+      const response = await cachedGet('/api/chores');
+      const data = response.data || response;
       // Ensure response.data is an array
-      if (Array.isArray(response.data)) {
+      if (Array.isArray(data)) {
         // Normalize user_id values to numbers for consistent filtering
-        const normalizedChores = response.data.map(chore => {
+        const normalizedChores = data.map(chore => {
           // Handle user_id: convert to number, treat null/undefined/empty string as 0
           let userId = chore.user_id;
           if (userId === null || userId === undefined || userId === '') {
@@ -242,7 +245,7 @@ const ChoreWidget = ({ transparentBackground }) => {
 
   const fetchPrizes = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/prizes`);
+      const response = await cachedGet('/api/prizes');
       // Ensure response.data is an array
       if (Array.isArray(response.data)) {
         setPrizes(response.data);
@@ -298,7 +301,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               assigned_day_of_week: day,
               user_id: Number(newChore.user_id) || 0
             };
-          await axios.post(`${getApiUrl()}/api/chores`, choreForDay);
+          await post('/api/chores', choreForDay);
         }
         setNewChore({
           user_id: 0, // Reset to bonus user (0)
@@ -332,7 +335,7 @@ const ChoreWidget = ({ transparentBackground }) => {
         repeat_type: 'weekly', // Default repeat type
         clam_value: bonusChoreClamValue
       };
-      await axios.post(`${getApiUrl()}/api/chores`, bonusChore);
+      await post('/api/chores', bonusChore);
       setNewBonusChore({
         title: '',
         description: '',

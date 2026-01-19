@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Box, Button, Card } from '@mui/material';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import axios from 'axios';
-import { getApiUrl } from '../utils/api.js';
+import { getApiUrl, cachedGet } from '../utils/api.js';
 
 const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { width: 4, height: 4 } }) => {
   const [weatherData, setWeatherData] = useState(null);
@@ -52,8 +52,8 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
     // Load zip code from API settings
     const loadZipCode = async () => {
       try {
-        const response = await axios.get(`${getApiUrl()}/api/settings`);
-        const settings = response.data;
+        const response = await cachedGet('/api/settings');
+        const settings = response.data || response;
         const savedZipCode = settings.WEATHER_ZIP_CODE || '14818';
         setZipCode(savedZipCode);
       } catch (error) {

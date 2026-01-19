@@ -1,29 +1,44 @@
 // client/src/app.jsx
-import React, { useState, useEffect } from 'react';
-import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip } from '@mui/material';
+import React, { useState, useEffect, Suspense, lazy, useMemo } from 'react';
+import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip, CircularProgress } from '@mui/material';
 import { Brightness4, Brightness7, Lock, LockOpen } from '@mui/icons-material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 import axios from 'axios';
-import CalendarWidget from './components/CalendarWidget.jsx';
-import PhotoWidget from './components/PhotoWidget.jsx';
-import AdminPanel from './components/AdminPanel.jsx';
-import WeatherWidget from './components/WeatherWidget.jsx';
-import ChoreWidget from './components/ChoreWidget.jsx';
-import TodoWidget from './components/TodoWidget.jsx';
-import NotesWidget from './components/NotesWidget.jsx';
-import AlarmWidget from './components/AlarmWidget.jsx';
-import HouseRulesWidget from './components/HouseRulesWidget.jsx';
-import MarbleChartWidget from './components/MarbleChartWidget.jsx';
-import GroceryListWidget from './components/GroceryListWidget.jsx';
-import MealPlannerWidget from './components/MealPlannerWidget.jsx';
-import MealSuggestionBoxWidget from './components/MealSuggestionBoxWidget.jsx';
-import WidgetGallery from './components/WidgetGallery.jsx';
+import { cachedGet } from './utils/api.js';
+// Lazy load all widget components for code splitting
+const CalendarWidget = lazy(() => import('./components/CalendarWidget.jsx'));
+const PhotoWidget = lazy(() => import('./components/PhotoWidget.jsx'));
+const WeatherWidget = lazy(() => import('./components/WeatherWidget.jsx'));
+const ChoreWidget = lazy(() => import('./components/ChoreWidget.jsx'));
+const TodoWidget = lazy(() => import('./components/TodoWidget.jsx'));
+const NotesWidget = lazy(() => import('./components/NotesWidget.jsx'));
+const AlarmWidget = lazy(() => import('./components/AlarmWidget.jsx'));
+const HouseRulesWidget = lazy(() => import('./components/HouseRulesWidget.jsx'));
+const MarbleChartWidget = lazy(() => import('./components/MarbleChartWidget.jsx'));
+const GroceryListWidget = lazy(() => import('./components/GroceryListWidget.jsx'));
+const MealPlannerWidget = lazy(() => import('./components/MealPlannerWidget.jsx'));
+const MealSuggestionBoxWidget = lazy(() => import('./components/MealSuggestionBoxWidget.jsx'));
+const WidgetGallery = lazy(() => import('./components/WidgetGallery.jsx'));
+const AdminPanel = lazy(() => import('./components/AdminPanel.jsx'));
 import WidgetContainer from './components/WidgetContainer.jsx';
 import { getApiUrl } from './utils/api.js';
 import { loadThemeSettings, applyThemeSettings } from './utils/theme.js';
 import './index.css';
+
+// Loading fallback component for lazy-loaded widgets
+const WidgetLoadingFallback = () => (
+  <Box sx={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    minHeight: '200px',
+    width: '100%'
+  }}>
+    <CircularProgress size={40} />
+  </Box>
+);
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -172,10 +187,10 @@ const App = () => {
   // Function to refresh API keys from backend
   const refreshApiKeys = async () => {
     try {
-      const apiUrl = getApiUrl();
-      const response = await axios.get(`${apiUrl}/api/settings`);
-      setApiKeys(response.data);
-      console.log('API keys refreshed:', response.data);
+      const response = await cachedGet('/api/settings');
+      const data = response.data || response;
+      setApiKeys(data);
+      console.log('API keys refreshed:', data);
     } catch (error) {
       console.error('Error fetching API keys:', error);
       if (error.response) {
@@ -412,79 +427,104 @@ const App = () => {
     return null;
   };
 
-  const buildWidgetsArray = () => {
-    const widgets = [];
+  // Memoize widget array building to prevent unnecessary re-renders
+  const widgets = useMemo(() => {
+    const widgetArray = [];
 
     try {
       if (widgetSettings.calendar?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'calendar-widget',
           defaultPosition: { x: 0, y: 0 },
           defaultSize: { width: 8, height: 5 },
           minWidth: 2,
           minHeight: 2,
-          content: <CalendarWidget
-            transparentBackground={widgetSettings.calendar?.transparent || false}
-            icsCalendarUrl={apiKeys.ICS_CALENDAR_URL || ''}
-          />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <CalendarWidget
+                transparentBackground={widgetSettings.calendar?.transparent || false}
+                icsCalendarUrl={apiKeys.ICS_CALENDAR_URL || ''}
+              />
+            </Suspense>
+          ),
         });
       }
 
       if (widgetSettings.weather?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'weather-widget',
           defaultPosition: { x: 8, y: 0 },
           defaultSize: { width: 4, height: 3 },
           minWidth: 2,
           minHeight: 2,
-          content: <WeatherWidget
-            transparentBackground={widgetSettings.weather?.transparent || false}
-            weatherApiKey={apiKeys.WEATHER_API_KEY || ''}
-          />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <WeatherWidget
+                transparentBackground={widgetSettings.weather?.transparent || false}
+                weatherApiKey={apiKeys.WEATHER_API_KEY || ''}
+              />
+            </Suspense>
+          ),
         });
       }
 
       if (widgetSettings.chores?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'chores-widget',
           defaultPosition: { x: 0, y: 5 },
           defaultSize: { width: 6, height: 4 },
           minWidth: 2,
           minHeight: 2,
-          content: <ChoreWidget transparentBackground={widgetSettings.chores?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <ChoreWidget transparentBackground={widgetSettings.chores?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
       if (widgetSettings.photos?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'photos-widget',
           defaultPosition: { x: 6, y: 5 },
           defaultSize: { width: 6, height: 4 },
           minWidth: 2,
           minHeight: 2,
-          content: <PhotoWidget transparentBackground={widgetSettings.photos?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <PhotoWidget transparentBackground={widgetSettings.photos?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
       if (widgetSettings.todos?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'todos-widget',
           defaultPosition: { x: 0, y: 9 },
           defaultSize: { width: 6, height: 5 },
           minWidth: 3,
           minHeight: 3,
-          content: <TodoWidget transparentBackground={widgetSettings.todos?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <TodoWidget transparentBackground={widgetSettings.todos?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
       if (widgetSettings.notes?.enabled) {
-        widgets.push({
+        widgetArray.push({
           id: 'notes-widget',
           defaultPosition: { x: 6, y: 9 },
           defaultSize: { width: 6, height: 5 },
           minWidth: 3,
           minHeight: 3,
-          content: <NotesWidget transparentBackground={widgetSettings.notes?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <NotesWidget transparentBackground={widgetSettings.notes?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -495,10 +535,8 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          // Find nearest open space
-          position = findNearestOpenSpace(4, 4, widgets);
+          position = findNearestOpenSpace(4, 4, widgetArray);
           if (position) {
-            // Save immediately
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
               y: position.y,
@@ -508,13 +546,17 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 4, height: 4 },
           minWidth: 3,
           minHeight: 2,
-          content: <AlarmWidget transparentBackground={widgetSettings.alarms?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <AlarmWidget transparentBackground={widgetSettings.alarms?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -524,7 +566,7 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          position = findNearestOpenSpace(4, 4, widgets);
+          position = findNearestOpenSpace(4, 4, widgetArray);
           if (position) {
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
@@ -535,13 +577,17 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 4, height: 4 },
           minWidth: 3,
           minHeight: 2,
-          content: <HouseRulesWidget transparentBackground={widgetSettings.houseRules?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <HouseRulesWidget transparentBackground={widgetSettings.houseRules?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -551,7 +597,7 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgets);
+          position = findNearestOpenSpace(4, 5, widgetArray);
           if (position) {
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
@@ -562,13 +608,17 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
-          content: <MarbleChartWidget transparentBackground={widgetSettings.marbles?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <MarbleChartWidget transparentBackground={widgetSettings.marbles?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -578,7 +628,7 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgets);
+          position = findNearestOpenSpace(4, 5, widgetArray);
           if (position) {
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
@@ -589,13 +639,17 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
-          content: <GroceryListWidget transparentBackground={widgetSettings.groceryList?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <GroceryListWidget transparentBackground={widgetSettings.groceryList?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -605,7 +659,7 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          position = findNearestOpenSpace(6, 5, widgets);
+          position = findNearestOpenSpace(6, 5, widgetArray);
           if (position) {
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
@@ -616,13 +670,17 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 6, height: 5 },
           minWidth: 4,
           minHeight: 4,
-          content: <MealPlannerWidget transparentBackground={widgetSettings.mealPlanner?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <MealPlannerWidget transparentBackground={widgetSettings.mealPlanner?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
 
@@ -632,7 +690,7 @@ const App = () => {
         let position = null;
         
         if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgets);
+          position = findNearestOpenSpace(4, 5, widgetArray);
           if (position) {
             localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
               x: position.x,
@@ -643,26 +701,27 @@ const App = () => {
           }
         }
 
-        widgets.push({
+        widgetArray.push({
           id: widgetId,
           defaultPosition: position || null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
-          content: <MealSuggestionBoxWidget transparentBackground={widgetSettings.mealSuggestionBox?.transparent || false} />,
+          content: (
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <MealSuggestionBoxWidget transparentBackground={widgetSettings.mealSuggestionBox?.transparent || false} />
+            </Suspense>
+          ),
         });
       }
     } catch (error) {
       console.error('Error building widgets array:', error);
       console.error('Widget settings:', widgetSettings);
-      // Return empty array to prevent crash
       return [];
     }
 
-    return widgets;
-  };
-
-  const widgets = buildWidgetsArray();
+    return widgetArray;
+  }, [widgetSettings, apiKeys]);
 
   return (
     <ErrorBoundary>
@@ -689,11 +748,13 @@ const App = () => {
 
         {widgetSettings.widgetGallery?.enabled && (
           <Container className="container" sx={{ mt: widgets.length > 0 ? 4 : 0 }}>
-            <WidgetGallery 
-              key={widgetGalleryKey} 
-              theme={theme}
-              transparentBackground={widgetSettings.widgetGallery?.transparent || false}
-            />
+            <Suspense fallback={<WidgetLoadingFallback />}>
+              <WidgetGallery 
+                key={widgetGalleryKey} 
+                theme={theme}
+                transparentBackground={widgetSettings.widgetGallery?.transparent || false}
+              />
+            </Suspense>
           </Container>
         )}
       </Box>
@@ -736,11 +797,19 @@ const App = () => {
             padding: 0,
           }
         }}>
-          <AdminPanel 
-            setWidgetSettings={setWidgetSettings} 
-            onWidgetUploaded={refreshWidgetGallery}
-            onSettingsSaved={refreshApiKeys}
-          />
+          {showAdminPanel && (
+            <Suspense fallback={
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+                <CircularProgress size={60} />
+              </Box>
+            }>
+              <AdminPanel 
+                setWidgetSettings={setWidgetSettings} 
+                onWidgetUploaded={refreshWidgetGallery}
+                onSettingsSaved={refreshApiKeys}
+              />
+            </Suspense>
+          )}
         </DialogContent>
       </Dialog>
 

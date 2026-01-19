@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { ChevronLeft, ChevronRight, Add, CheckCircle, Undo, Delete, Edit } from '@mui/icons-material';
 import axios from 'axios';
-import { getApiUrl } from '../utils/api.js';
+import { getApiUrl, cachedGet } from '../utils/api.js';
 import moment from 'moment';
 
 const TodoWidget = ({ transparentBackground }) => {
@@ -64,7 +64,7 @@ const TodoWidget = ({ transparentBackground }) => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/users`);
+      const response = await cachedGet('/api/users');
       setUsers(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -76,7 +76,7 @@ const TodoWidget = ({ transparentBackground }) => {
     setError(null);
     try {
       const dateStr = moment(selectedDate).format('YYYY-MM-DD');
-      const response = await axios.get(`${getApiUrl()}/api/caldav/todos?date=${dateStr}`);
+      const response = await cachedGet(`/api/caldav/todos?date=${dateStr}`);
       setTodos(Array.isArray(response.data) ? response.data : []);
       setDefaultCalendarError(false);
     } catch (error) {
