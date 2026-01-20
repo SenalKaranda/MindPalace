@@ -5,12 +5,16 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3001,
-    host: process.env.VITE_HOST || 'localhost',
+    // Use 'true' to bind to all network interfaces (0.0.0.0)
+    // This allows access via both localhost:3001 and 127.0.0.1:3001
+    // Set VITE_HOST=localhost in .env if you want to restrict to localhost only
+    host: process.env.VITE_HOST || true,
     watch: {
       usePolling: true, // Required for Docker volume mounts
     },
     hmr: {
-      host: process.env.VITE_HOST || 'localhost',
+      // HMR will work with the server host setting
+      // If accessing via 127.0.0.1, HMR will use that automatically
       port: 3001,
     },
   },

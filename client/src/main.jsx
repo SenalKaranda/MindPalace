@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './app.jsx'; // Corrected import path
 import { loadThemeSettings, applyThemeSettings } from './utils/theme.js';
+import { performanceMonitor } from './utils/performanceMonitor.js';
 import './index.css';
 
 // Apply theme synchronously before React renders to prevent FOUC (Flash of Unstyled Content)

@@ -62,6 +62,17 @@ const TodoWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[TodoWidget] Soft refresh triggered, refetching data...');
+      fetchTodos();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchUsers = async () => {
     try {
       const response = await cachedGet('/api/users');

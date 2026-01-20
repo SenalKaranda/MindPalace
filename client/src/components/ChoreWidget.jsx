@@ -89,6 +89,21 @@ const ChoreWidget = ({ transparentBackground }) => {
     fetchBonusChoreClamValue();
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[ChoreWidget] Soft refresh triggered, refetching data...');
+      fetchUsers();
+      fetchChores();
+      fetchPrizes();
+      fetchPrizeMinimumShells();
+      fetchBonusChoreClamValue();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchPrizeMinimumShells = async () => {
     try {
       const response = await axios.get(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_SHELLS`);

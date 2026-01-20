@@ -75,6 +75,17 @@ const MealPlannerWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[MealPlannerWidget] Soft refresh triggered, refetching data...');
+      fetchMeals();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const getWeekStart = (date) => {
     const d = new Date(date);
     const day = d.getDay();

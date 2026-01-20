@@ -33,6 +33,17 @@ const HouseRulesWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[HouseRulesWidget] Soft refresh triggered, refetching data...');
+      fetchRules();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchRules = async () => {
     setLoading(true);
     setError(null);

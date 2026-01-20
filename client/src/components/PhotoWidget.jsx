@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Typography, Box, IconButton, CircularProgress, Alert, Chip, Card } from '@mui/material';
 import { Refresh, ChevronLeft, ChevronRight, PlayArrow, Pause } from '@mui/icons-material';
 import axios from 'axios';
-import { getApiUrl, cachedGet } from '../utils/api.js';
+import { getApiUrl, cachedGet, invalidateCache } from '../utils/api.js';
 
 const PhotoWidget = ({ transparentBackground }) => {
   const [photos, setPhotos] = useState([]);
@@ -39,6 +39,19 @@ const PhotoWidget = ({ transparentBackground }) => {
     fetchPhotoSources();
     fetchPhotos();
     loadPreferences();
+  }, []);
+
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[PhotoWidget] Soft refresh triggered, refetching data...');
+      fetchPhotoSources();
+      fetchPhotos();
+      loadPreferences();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
   }, []);
 
   const loadPreferences = async () => {
@@ -559,7 +572,12 @@ const PhotoWidget = ({ transparentBackground }) => {
             {isPlaying ? <Pause /> : <PlayArrow />}
           </IconButton>
           <IconButton 
-            onClick={fetchPhotos} 
+            onClick={() => {
+              // Clear cache for photos to force fresh fetch
+              invalidateCache('/api/photo-items');
+              invalidateCache('/api/photo-sources');
+              fetchPhotos();
+            }} 
             size="small" 
             disabled={loading}
             sx={{
@@ -579,6 +597,7 @@ const PhotoWidget = ({ transparentBackground }) => {
                 opacity: 0.5
               }
             }}
+            title="Refresh photos (clears cache)"
           >
             <Refresh />
           </IconButton>

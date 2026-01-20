@@ -76,7 +76,7 @@ import {
   importThemeSettings
 } from '../utils/theme.js';
 
-const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) => {
+const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onClose }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [settings, setSettings] = useState({
     WEATHER_API_KEY: '',
@@ -995,32 +995,88 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
   };
 
   const handleWidgetToggle = (widget, field) => {
-    setLocalWidgetSettings(prev => ({
-      ...prev,
+    const newSettings = {
+      ...widgetSettings,
       [widget]: {
-        ...prev[widget],
-        [field]: !prev[widget][field]
+        ...widgetSettings[widget],
+        [field]: !widgetSettings[widget][field]
       }
+    };
+    
+    // Update local state
+    setLocalWidgetSettings(newSettings);
+    
+    // Save immediately to localStorage
+    localStorage.setItem('widgetSettings', JSON.stringify(newSettings));
+    
+    // Update parent component
+    setWidgetSettings(newSettings);
+    
+    // Trigger storage event so app.jsx can pick up the changes
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'widgetSettings',
+      newValue: JSON.stringify(newSettings),
+      storageArea: localStorage
     }));
+    
+    // Show brief success message
+    setSaveMessage({ show: true, type: 'success', text: 'Widget settings updated!' });
+    setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 2000);
   };
 
   const handleRefreshIntervalChange = (widget, interval) => {
-    setLocalWidgetSettings(prev => ({
-      ...prev,
+    const newSettings = {
+      ...widgetSettings,
       [widget]: {
-        ...prev[widget],
-        refreshInterval: interval
+        ...widgetSettings[widget],
+        refreshInterval: parseInt(interval)
       }
+    };
+    
+    // Update local state
+    setLocalWidgetSettings(newSettings);
+    
+    // Save immediately to localStorage
+    localStorage.setItem('widgetSettings', JSON.stringify(newSettings));
+    
+    // Update parent component
+    setWidgetSettings(newSettings);
+    
+    // Trigger storage event so app.jsx can pick up the changes
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'widgetSettings',
+      newValue: JSON.stringify(newSettings),
+      storageArea: localStorage
     }));
+    
+    // Show brief success message
+    setSaveMessage({ show: true, type: 'success', text: 'Refresh interval updated!' });
+    setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 2000);
   };
 
   const handleWeatherLayoutModeChange = (mode) => {
-    setLocalWidgetSettings(prev => ({
-      ...prev,
+    const newSettings = {
+      ...widgetSettings,
       weather: {
-        ...prev.weather,
+        ...widgetSettings.weather,
         layoutMode: mode
       }
+    };
+    
+    // Update local state
+    setLocalWidgetSettings(newSettings);
+    
+    // Save immediately to localStorage
+    localStorage.setItem('widgetSettings', JSON.stringify(newSettings));
+    
+    // Update parent component
+    setWidgetSettings(newSettings);
+    
+    // Trigger storage event so app.jsx can pick up the changes
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'widgetSettings',
+      newValue: JSON.stringify(newSettings),
+      storageArea: localStorage
     }));
   };
 
@@ -1742,30 +1798,42 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
 
   return (
     <ThemeProvider theme={muiTheme}>
-      <Box sx={{ 
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        width: '100%',
-        p: 3
-      }}>
-        <Box sx={{ 
-          width: 'calc(100vw * 0.75)', 
-          maxWidth: 'calc(100vw * 0.75)',
-          height: 'calc(100vh * 0.75)',
-          maxHeight: 'calc(100vh * 0.75)',
-          mx: 'auto', 
-          color: 'var(--text)',
-          px: 4,
-          py: 3,
-          overflow: 'auto',
-          backgroundColor: 'var(--card-bg)',
-          borderRadius: 'var(--border-radius-medium)',
-                      boxShadow: '0 4px 20px rgba(var(--background-rgb, 0, 0, 0), 0.3)',
-          position: 'relative',
-          zIndex: 1
-        }}>
+      <Box 
+        onClick={(e) => {
+          // Stop propagation for clicks inside AdminPanel to prevent closing
+          e.stopPropagation();
+        }}
+        sx={{ 
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          width: '100%',
+          p: 3
+        }}
+      >
+        <Box 
+          onClick={(e) => {
+            // Stop propagation for clicks inside the panel content
+            e.stopPropagation();
+          }}
+          sx={{ 
+            width: 'calc(100vw * 0.75)', 
+            maxWidth: 'calc(100vw * 0.75)',
+            height: 'calc(100vh * 0.75)',
+            maxHeight: 'calc(100vh * 0.75)',
+            mx: 'auto', 
+            color: 'var(--text)',
+            px: 4,
+            py: 3,
+            overflow: 'auto',
+            backgroundColor: 'var(--card-bg)',
+            borderRadius: 'var(--border-radius-medium)',
+            boxShadow: '0 4px 20px rgba(var(--background-rgb, 0, 0, 0), 0.3)',
+            position: 'relative',
+            zIndex: 1
+          }}
+        >
         {/* Header with gradient border */}
         <Box sx={{ 
           p: 2, 
@@ -1798,7 +1866,18 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
             <Button
               variant="contained"
               onClick={() => {
-                window.location.reload();
+                // Trigger soft refresh instead of hard reload
+                window.dispatchEvent(new CustomEvent('softRefresh', { 
+                  detail: { timestamp: Date.now() } 
+                }));
+                // Refresh API keys
+                if (onSettingsSaved) {
+                  onSettingsSaved();
+                }
+                // Close admin panel
+                if (onClose) {
+                  onClose();
+                }
               }}
               startIcon={<Close />}
               sx={{
@@ -1810,7 +1889,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                 }
               }}
             >
-              Exit & Refresh
+              Exit & Refresh Data
             </Button>
           </Box>
         </Box>
@@ -2170,10 +2249,6 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved }) =>
                 </Alert>
               )}
             </Box>
-            
-            <Button variant="contained" onClick={saveWidgetSettings} sx={{ mt: 2 }} startIcon={<Save />}>
-              Save Widget Settings
-            </Button>
           </CardContent>
         </Card>
       )}

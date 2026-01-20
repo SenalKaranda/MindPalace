@@ -1,6 +1,7 @@
 // API utility functions
 import axios from 'axios';
 import { apiCache } from './apiCache.js';
+import { performanceMonitor } from './performanceMonitor.js';
 
 // Get the API URL with fallback for development
 export const getApiUrl = () => {
@@ -38,8 +39,13 @@ export const cachedGet = async (url, config = {}, ttl = null) => {
 
   console.log(`[ApiCache] Cache MISS for ${fullUrl}, fetching...`);
   
+  // Monitor API performance
+  const monitor = performanceMonitor.monitorApiCall(fullUrl, 'GET');
+  monitor.start();
+  
   try {
     const response = await axios.get(fullUrl, config);
+    monitor.end(response);
     
     // Cache successful responses (only cache 2xx status codes)
     if (response.status >= 200 && response.status < 300) {
@@ -48,6 +54,7 @@ export const cachedGet = async (url, config = {}, ttl = null) => {
     
     return { ...response, fromCache: false };
   } catch (error) {
+    monitor.end(error.response);
     // Don't cache errors
     throw error;
   }
@@ -58,7 +65,17 @@ export const cachedGet = async (url, config = {}, ttl = null) => {
  */
 export const get = async (url, config = {}) => {
   const fullUrl = url.startsWith('http') ? url : `${getApiUrl()}${url}`;
-  return axios.get(fullUrl, config);
+  const monitor = performanceMonitor.monitorApiCall(fullUrl, 'GET');
+  monitor.start();
+  
+  try {
+    const response = await axios.get(fullUrl, config);
+    monitor.end(response);
+    return response;
+  } catch (error) {
+    monitor.end(error.response);
+    throw error;
+  }
 };
 
 /**

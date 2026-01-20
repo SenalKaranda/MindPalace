@@ -1,12 +1,13 @@
 // client/src/app.jsx
-import React, { useState, useEffect, Suspense, lazy, useMemo } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useMemo, useRef } from 'react';
 import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip, CircularProgress } from '@mui/material';
 import { Brightness4, Brightness7, Lock, LockOpen } from '@mui/icons-material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 import axios from 'axios';
-import { cachedGet } from './utils/api.js';
+import { cachedGet, clearCache } from './utils/api.js';
+import LoadingOverlay from './components/LoadingOverlay.jsx';
 // Lazy load all widget components for code splitting
 const CalendarWidget = lazy(() => import('./components/CalendarWidget.jsx'));
 const PhotoWidget = lazy(() => import('./components/PhotoWidget.jsx'));
@@ -172,6 +173,7 @@ const App = () => {
     return defaultSettings;
   });
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const adminPanelRef = useRef(null);
   const [currentGeoPatternSeed, setCurrentGeoPatternSeed] = useState('');
   const [apiKeys, setApiKeys] = useState({
     WEATHER_API_KEY: '',
@@ -179,6 +181,9 @@ const App = () => {
     LOGO_FILENAME: 'MindPalaceMobileLogo.png',
   });
   const [widgetGalleryKey, setWidgetGalleryKey] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0); // Key to force widget re-renders
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isApiKeysLoading, setIsApiKeysLoading] = useState(true);
 
   const refreshWidgetGallery = () => {
     setWidgetGalleryKey(prev => prev + 1);
@@ -186,6 +191,7 @@ const App = () => {
 
   // Function to refresh API keys from backend
   const refreshApiKeys = async () => {
+    setIsApiKeysLoading(true);
     try {
       const response = await cachedGet('/api/settings');
       const data = response.data || response;
@@ -197,12 +203,27 @@ const App = () => {
         console.error('Response status:', error.response.status);
         console.error('Response data:', error.response.data);
       }
+    } finally {
+      setIsApiKeysLoading(false);
     }
   };
 
   useEffect(() => {
     refreshApiKeys();
   }, []);
+
+  // Track initial loading state
+  useEffect(() => {
+    // Set initial loading to false after a short delay to allow initial render
+    // and after API keys are loaded
+    if (!isApiKeysLoading) {
+      // Small delay to ensure smooth transition
+      const timer = setTimeout(() => {
+        setIsInitialLoading(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isApiKeysLoading]);
 
   // Initialize localStorage with defaults on first load if they don't exist
   useEffect(() => {
@@ -338,6 +359,29 @@ const App = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  // Disable body scroll when admin panel is open to prevent background scrolling
+  useEffect(() => {
+    if (showAdminPanel) {
+      // Save current scroll position
+      const scrollY = window.scrollY;
+      // Disable body scroll
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+      document.body.style.overflow = 'hidden';
+      
+      return () => {
+        // Re-enable body scroll when panel closes
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        document.body.style.overflow = '';
+        // Restore scroll position
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [showAdminPanel]);
+
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
@@ -369,8 +413,42 @@ const App = () => {
     setShowAdminPanel(!showAdminPanel);
   };
 
-  const handlePageRefresh = () => {
-    window.location.reload();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Soft refresh - clears cache and refetches data without page reload
+  const handleSoftRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      // Clear API cache to force fresh data
+      const { clearCache } = await import('./utils/api.js');
+      clearCache();
+      
+      // Refresh API keys
+      await refreshApiKeys();
+      
+      // Trigger a re-render by updating a state that widgets can listen to
+      // This will cause widgets to refetch their data
+      setWidgetGalleryKey(prev => prev + 1);
+      
+      // Dispatch a custom event that widgets can listen to for refresh
+      window.dispatchEvent(new CustomEvent('softRefresh'));
+      
+      console.log('✅ Soft refresh completed - cache cleared, data refetched');
+    } catch (error) {
+      console.error('Error during soft refresh:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Hard refresh - full page reload (use when soft refresh isn't enough)
+  const handlePageRefresh = (event) => {
+    // Hold Shift for hard refresh, otherwise soft refresh
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      window.location.reload();
+    } else {
+      handleSoftRefresh();
+    }
   };
 
   // Find nearest open space for widget positioning
@@ -723,8 +801,18 @@ const App = () => {
     return widgetArray;
   }, [widgetSettings, apiKeys]);
 
+  // Determine if we should show the loading overlay
+  const showLoadingOverlay = isInitialLoading || isApiKeysLoading;
+
   return (
     <ErrorBoundary>
+      {/* Loading Overlay */}
+      <LoadingOverlay 
+        open={showLoadingOverlay}
+        message={isApiKeysLoading ? 'Loading settings...' : null}
+        minDisplayTime={500}
+      />
+      
       <Box sx={{ width: '100%', minHeight: '100vh', position: 'relative' }}>
         {widgets.length > 0 ? (
           <WidgetContainer widgets={widgets} locked={widgetsLocked} />
@@ -761,10 +849,23 @@ const App = () => {
 
       <Dialog 
         open={showAdminPanel} 
-        onClose={toggleAdminPanel} 
+        onClose={(event, reason) => {
+          // Close on backdrop click or escape key
+          if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+            toggleAdminPanel();
+          }
+        }}
         maxWidth={false}
         fullWidth
+        disableScrollLock={false}
         PaperProps={{
+          onClick: (e) => {
+            // If clicking on the Paper itself (not children), close the dialog
+            // This handles clicks on the transparent area around the panel
+            if (e.target === e.currentTarget) {
+              toggleAdminPanel();
+            }
+          },
           sx: {
             backgroundColor: 'transparent',
             color: 'var(--text)',
@@ -775,39 +876,59 @@ const App = () => {
             maxHeight: '100%',
             margin: 0,
             borderRadius: 0,
-            boxShadow: 'none'
+            boxShadow: 'none',
+            overflow: 'hidden'
           }
         }}
         BackdropProps={{
+          onClick: (e) => {
+            // Explicitly handle backdrop clicks - this should work in Firefox
+            // Stop propagation to prevent double-firing
+            e.stopPropagation();
+            toggleAdminPanel();
+          },
           sx: {
-            backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.5)'
+            backgroundColor: 'rgba(var(--background-rgb, 0, 0, 0), 0.5)',
+            cursor: 'pointer'
           }
         }}
       >
-        <DialogContent sx={{ 
-          backgroundColor: 'transparent',
-          color: 'var(--text)',
-          padding: 0,
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          '&.MuiDialogContent-root': {
+        <DialogContent 
+          onClick={(e) => {
+            // If clicking outside the AdminPanel (on the DialogContent itself), close the dialog
+            if (adminPanelRef.current && !adminPanelRef.current.contains(e.target)) {
+              toggleAdminPanel();
+            }
+          }}
+          sx={{ 
+            backgroundColor: 'transparent',
+            color: 'var(--text)',
             padding: 0,
-          }
-        }}>
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            overflow: 'auto',
+            '&.MuiDialogContent-root': {
+              padding: 0,
+            }
+          }}
+        >
           {showAdminPanel && (
             <Suspense fallback={
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
                 <CircularProgress size={60} />
               </Box>
             }>
-              <AdminPanel 
-                setWidgetSettings={setWidgetSettings} 
-                onWidgetUploaded={refreshWidgetGallery}
-                onSettingsSaved={refreshApiKeys}
-              />
+              <Box ref={adminPanelRef}>
+                <AdminPanel 
+                  setWidgetSettings={setWidgetSettings} 
+                  onWidgetUploaded={refreshWidgetGallery}
+                  onSettingsSaved={refreshApiKeys}
+                  onClose={toggleAdminPanel}
+                />
+              </Box>
             </Suspense>
           )}
         </DialogContent>
@@ -971,24 +1092,36 @@ const App = () => {
             </IconButton>
           </Tooltip>
 
-          {/* Refresh Button */}
-          <Tooltip title="Refresh page" arrow>
+          {/* Refresh Button - Soft refresh by default, Shift+Click for hard refresh */}
+          <Tooltip 
+            title={isRefreshing ? "Refreshing..." : "Refresh data (Shift+Click for full reload)"} 
+            arrow
+          >
             <IconButton
               onClick={handlePageRefresh}
-              aria-label="Refresh Page"
+              aria-label="Refresh Data"
+              disabled={isRefreshing}
               sx={{
                 width: 40,
                 height: 40,
                 borderRadius: '20px',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                color: 'var(--text-secondary)',
+                color: isRefreshing ? 'var(--primary)' : 'var(--text-secondary)',
                 backgroundColor: 'transparent',
+                animation: isRefreshing ? 'spin 1s linear infinite' : 'none',
+                '@keyframes spin': {
+                  '0%': { transform: 'rotate(0deg)' },
+                  '100%': { transform: 'rotate(360deg)' },
+                },
                 '&:hover': {
                   backgroundColor: 'rgba(var(--primary-rgb), 0.08)',
                   transform: 'scale(1.05)',
                 },
                 '&:active': {
                   transform: 'scale(0.95)',
+                },
+                '&:disabled': {
+                  opacity: 0.6,
                 },
               }}
             >

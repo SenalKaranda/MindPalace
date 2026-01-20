@@ -56,6 +56,17 @@ const NotesWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[NotesWidget] Soft refresh triggered, refetching data...');
+      fetchNotes();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchNotes = async () => {
     setLoading(true);
     setError(null);

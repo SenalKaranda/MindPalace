@@ -76,6 +76,17 @@ const AlarmWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[AlarmWidget] Soft refresh triggered, refetching data...');
+      fetchAlarms();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   // Set up alarm timers when alarms change
   useEffect(() => {
     // Clear all existing timers

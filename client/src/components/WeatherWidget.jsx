@@ -75,6 +75,19 @@ const WeatherWidget = ({ transparentBackground, weatherApiKey, widgetSize = { wi
     }
   }, [zipCode, weatherApiKey]);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[WeatherWidget] Soft refresh triggered, refetching data...');
+      if (zipCode && weatherApiKey) {
+        fetchWeatherData();
+      }
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, [zipCode, weatherApiKey]);
+
   useEffect(() => {
     const widgetSettings = JSON.parse(localStorage.getItem('widgetSettings') || '{}');
     const refreshInterval = widgetSettings.weather?.refreshInterval || 0;

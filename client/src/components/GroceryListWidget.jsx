@@ -68,6 +68,17 @@ const GroceryListWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[GroceryListWidget] Soft refresh triggered, refetching data...');
+      fetchGroceryItems();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${getApiUrl()}/api/users`);

@@ -38,6 +38,19 @@ const CalendarWidget = ({ transparentBackground, icsCalendarUrl }) => {
     loadCalendarSettings();
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[CalendarWidget] Soft refresh triggered, refetching data...');
+      fetchCalendarSources();
+      fetchCalendarEvents();
+      loadCalendarSettings();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   // Load calendar settings from API
   const loadCalendarSettings = async () => {
     try {

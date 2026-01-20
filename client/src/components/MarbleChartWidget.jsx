@@ -51,6 +51,21 @@ const MarbleChartWidget = ({ transparentBackground }) => {
     }
   }, [selectedUserId]);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[MarbleChartWidget] Soft refresh triggered, refetching data...');
+      fetchMarbles();
+      if (selectedUserId) {
+        fetchHistory(selectedUserId);
+      }
+      fetchSettings();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, [selectedUserId]);
+
   const fetchMarbles = async () => {
     setLoading(true);
     setError(null);

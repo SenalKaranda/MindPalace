@@ -57,6 +57,17 @@ const MealSuggestionBoxWidget = ({ transparentBackground }) => {
     }
   }, []);
 
+  // Listen for soft refresh events
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      console.log('[MealSuggestionBoxWidget] Soft refresh triggered, refetching data...');
+      fetchSuggestions();
+    };
+
+    window.addEventListener('softRefresh', handleSoftRefresh);
+    return () => window.removeEventListener('softRefresh', handleSoftRefresh);
+  }, []);
+
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${getApiUrl()}/api/users`);
