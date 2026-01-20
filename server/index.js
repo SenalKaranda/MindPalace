@@ -112,6 +112,13 @@ fastify.register(require('@fastify/cors'), {
 
 fastify.register(multipart);
 
+// Add request timing hook - store start time
+fastify.addHook('onRequest', (request, reply, done) => {
+  // Store start time for performance measurement
+  request.startTime = Date.now();
+  done();
+});
+
 // Add a preHandler hook to log all incoming requests
 fastify.addHook('preHandler', (request, reply, done) => {
   console.log(`[${new Date().toISOString()}] ${request.method} ${request.url}`);
@@ -126,6 +133,24 @@ fastify.addHook('preHandler', (request, reply, done) => {
     }
     console.log('Request body:', JSON.stringify(bodyToLog));
   }
+  done();
+});
+
+// Add response timing hook - log performance metrics
+fastify.addHook('onSend', (request, reply, payload, done) => {
+  const duration = Date.now() - (request.startTime || Date.now());
+  const statusCode = reply.statusCode;
+  const size = payload ? (typeof payload === 'string' ? payload.length : JSON.stringify(payload).length) : 0;
+  
+  // Log slow requests (>100ms) with more detail
+  if (duration > 100) {
+    console.log(`[PERF] ${request.method} ${request.url} - ${statusCode} - ${duration}ms - ${(size / 1024).toFixed(2)}KB - SLOW`);
+  } else {
+    console.log(`[PERF] ${request.method} ${request.url} - ${statusCode} - ${duration}ms`);
+  }
+  
+  // Add performance header for client-side analysis
+  reply.header('X-Response-Time', `${duration}ms`);
   done();
 });
 
