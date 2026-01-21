@@ -49,7 +49,10 @@
   --spacing-xxl: 48px; /* Maximum spacing */
   
   /* Typography - Can be overridden by theme settings */
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-family-secondary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-family-tertiary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-family: var(--font-family-primary); /* Legacy support */
   --base-font-size: 16px;
   --line-height: 1.5;
   --letter-spacing: -0.01em;
@@ -160,7 +163,7 @@ html, body {
 }
 
 body {
-  font-family: var(--font-family, 'Inter'), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: var(--font-family-primary, 'Inter'), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   background: var(--container-background-override);
   background-attachment: fixed;
   color: var(--text);
@@ -170,6 +173,47 @@ body {
   font-weight: var(--font-weight, 400);
   min-height: 100vh;
   padding-bottom: var(--bottom-bar-height);
+}
+
+/* Typography hierarchy using the three font families */
+h1, h2, h3, h4, h5, h6,
+.MuiTypography-h1, .MuiTypography-h2, .MuiTypography-h3,
+.MuiTypography-h4, .MuiTypography-h5, .MuiTypography-h6 {
+  font-family: var(--font-family-secondary, var(--font-family-primary, 'Inter')), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+
+/* Body text uses primary font */
+p, span, div, body,
+.MuiTypography-body1, .MuiTypography-body2,
+.MuiTypography-subtitle1, .MuiTypography-subtitle2 {
+  font-family: var(--font-family-primary, 'Inter'), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+
+/* Captions, labels, and small text use tertiary font */
+.MuiTypography-caption,
+.MuiInputLabel-root,
+.MuiFormLabel-root,
+small, .caption {
+  font-family: var(--font-family-tertiary, var(--font-family-primary, 'Inter')), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+
+/* Ensure all MUI Typography components use the theme fonts */
+.MuiTypography-root {
+  font-family: var(--font-family-primary, 'Inter'), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+
+/* Widget-specific font inheritance */
+.widget-wrapper,
+.widget-wrapper *,
+[class*="widget"],
+[class*="Widget"] {
+  font-family: inherit !important;
+}
+
+/* Ensure widgets inherit fonts from their containers */
+.react-grid-item,
+.react-grid-item * {
+  font-family: inherit !important;
 }
 
 .container {

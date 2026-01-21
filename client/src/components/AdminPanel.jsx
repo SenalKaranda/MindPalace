@@ -43,7 +43,8 @@ import {
   Slider,
   Tooltip,
   ThemeProvider,
-  createTheme
+  createTheme,
+  Autocomplete
 } from '@mui/material';
 import {
   Delete,
@@ -61,11 +62,13 @@ import {
   ViewModule,
   ViewQuilt,
   Remove,
-  Close
+  Close,
+  Palette
 } from '@mui/icons-material';
 import { ChromePicker } from 'react-color';
 import axios from 'axios';
 import { getApiUrl } from '../utils/api.js';
+import ConfirmationDialog from './ConfirmationDialog.jsx';
 import { 
   defaultThemeSettings, 
   loadThemeSettings, 
@@ -73,7 +76,10 @@ import {
   applyThemeSettings,
   themePresets,
   exportThemeSettings,
-  importThemeSettings
+  importThemeSettings,
+  getAllThemes,
+  getAllFonts,
+  loadGoogleFont
 } from '../utils/theme.js';
 
 const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onClose }) => {
@@ -82,7 +88,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     WEATHER_API_KEY: '',
     PROXY_WHITELIST: '',
     TIMEZONE: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
-    LOGO_FILENAME: 'MindPalaceMobileLogo.png'
+    LOGO_FILENAME: 'MindPalaceMobileLogo.png',
+    WEATHER_ZIP_CODE: '14818'
   });
   const [widgetSettings, setLocalWidgetSettings] = useState({
     chores: { enabled: false, transparent: false, refreshInterval: 0 },
@@ -101,7 +108,9 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     // Accent colors (shared) - only these are customizable
     primary: '#9E7FFF',
     secondary: '#38bdf8',
-    accent: '#f472b6'
+    accent: '#f472b6',
+    // Interface settings
+    loadingAnimationMode: 'startup' // 'startup', 'all', 'disabled'
   });
   const [users, setUsers] = useState([]);
   const [chores, setChores] = useState([]);
@@ -109,9 +118,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   const [editingUser, setEditingUser] = useState(null);
   const [editingPrize, setEditingPrize] = useState(null);
   const [newUser, setNewUser] = useState({ username: '', email: '', profile_picture: '' });
-  const [newPrize, setNewPrize] = useState({ name: '', clam_cost: 0, emoji: '' });
-  const [prizeMinimumShells, setPrizeMinimumShells] = useState(0);
-  const [bonusChoreClamValue, setBonusChoreClamValue] = useState(1);
+  const [newPrize, setNewPrize] = useState({ name: '', currency_cost: 0, emoji: '' });
+  const [prizeMinimumCurrency, setPrizeMinimumCurrency] = useState(0);
+  const [bonusChoreCurrencyValue, setBonusChoreCurrencyValue] = useState(1);
+  const [dailyChoresCompletionBonus, setDailyChoresCompletionBonus] = useState(2);
+  const [currencyName, setCurrencyName] = useState('Clam');
+  const [currencyNamePlural, setCurrencyNamePlural] = useState('Clams');
+  const [currencyEmoji, setCurrencyEmoji] = useState('🥟');
   const [uploadedWidgets, setUploadedWidgets] = useState([]);
   const [githubWidgets, setGithubWidgets] = useState([]);
   const [loadingGithub, setLoadingGithub] = useState(false);
@@ -120,6 +133,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   const [choreModal, setChoreModal] = useState({ open: false, user: null, userChores: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
+  const [confirmationDialog, setConfirmationDialog] = useState({ open: false, title: '', message: '', onConfirm: null, severity: 'warning' });
   
   // Calendar management state
   const [calendarSources, setCalendarSources] = useState([]);
@@ -188,6 +202,29 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   // Theme settings state
   const [themeSettings, setThemeSettings] = useState(() => loadThemeSettings());
   const [themeSubTab, setThemeSubTab] = useState(0); // Sub-tabs for theming sections
+  const [paletteGeneratorMode, setPaletteGeneratorMode] = useState('complementary');
+  const [paletteSaving, setPaletteSaving] = useState(false);
+  const [paletteMessage, setPaletteMessage] = useState('');
+  const [paletteName, setPaletteName] = useState('');
+  const [designerOpenInNewTab, setDesignerOpenInNewTab] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = localStorage.getItem('designerOpenInNewTab');
+      return stored ? JSON.parse(stored) : false;
+    } catch (e) {
+      console.error('Error reading designer open-mode setting from localStorage:', e);
+      return false;
+    }
+  });
+  const [lightPreset, setLightPreset] = useState(null);
+  const [darkPreset, setDarkPreset] = useState(null);
+  const [allThemes, setAllThemes] = useState(themePresets);
+  const [deletingPresetId, setDeletingPresetId] = useState(null);
+  const [allFonts, setAllFonts] = useState([]);
+  const [choresSubTab, setChoresSubTab] = useState(0); // Sub-tabs for Chores widget: Settings, Users, Prizes, Interface
+  const [weatherSubTab, setWeatherSubTab] = useState(0); // Sub-tabs for Weather widget: Settings, Interface
+  const [calendarSubTab, setCalendarSubTab] = useState(0); // Sub-tabs for Calendar widget: Settings, Interface
+  const [photosSubTab, setPhotosSubTab] = useState(0); // Sub-tabs for Photos widget: Settings, Interface
   const [calendarSettings, setCalendarSettings] = useState({
     eventBackgroundColor: 'var(--primary)',
     eventTextColor: 'var(--text)',
@@ -204,11 +241,15 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     return document.documentElement.getAttribute('data-theme') || 'light';
   });
   
-  // Listen for theme changes
+  // Listen for theme changes and re-apply settings
   useEffect(() => {
     const observer = new MutationObserver(() => {
       const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
       setCurrentTheme(newTheme);
+      // Re-apply theme settings for the new mode when theme toggles
+      if (themeSettings && themeSettings.colors && themeSettings.colors[newTheme]) {
+        applyThemeSettings(themeSettings, newTheme, false);
+      }
     });
     
     observer.observe(document.documentElement, {
@@ -217,7 +258,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     });
     
     return () => observer.disconnect();
-  }, []);
+  }, [themeSettings]);
 
   // Listen for theme updates to ensure MUI theme reads fresh CSS variables
   const [themeUpdateCounter, setThemeUpdateCounter] = React.useState(0);
@@ -229,6 +270,58 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     window.addEventListener('themeUpdated', handleThemeUpdate);
     return () => window.removeEventListener('themeUpdated', handleThemeUpdate);
   }, []);
+
+  // Delete a custom color preset (theme)
+  const handleDeletePreset = (presetKey) => {
+    const preset = allThemes[presetKey];
+    if (!preset || !preset.isCustom) {
+      return;
+    }
+
+    const underlyingId =
+      preset.id ||
+      (presetKey.startsWith('custom-') ? presetKey.substring('custom-'.length) : presetKey);
+
+    if (!underlyingId) return;
+
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete Custom Preset',
+      message: `Are you sure you want to delete the custom preset "${preset.name}"? This action cannot be undone.`,
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          setDeletingPresetId(presetKey);
+          const apiUrl = getApiUrl();
+          await axios.delete(`${apiUrl}/api/themes/colors/${encodeURIComponent(underlyingId)}`);
+
+          setAllThemes((prev) => {
+            const next = { ...prev };
+            delete next[presetKey];
+            return next;
+          });
+
+          // Clear selection if the deleted preset was active
+          setLightPreset((prev) => (prev === presetKey ? null : prev));
+          setDarkPreset((prev) => (prev === presetKey ? null : prev));
+        } catch (error) {
+          console.error('[AdminPanel] Failed to delete color preset:', error);
+          setSaveMessage({
+            show: true,
+            type: 'error',
+            text: 'Failed to delete preset. Please try again.',
+          });
+          setTimeout(
+            () => setSaveMessage({ show: false, type: '', text: '' }),
+            4000
+          );
+        } finally {
+          setDeletingPresetId(null);
+          setConfirmationDialog((prev) => ({ ...prev, open: false }));
+        }
+      }
+    });
+  };
   
   // Create MUI theme that reads CSS variables fresh each time
   const muiTheme = React.useMemo(() => {
@@ -269,9 +362,19 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         },
       },
       typography: {
-        fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family').trim() || 'Inter, sans-serif',
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family').trim() || 'Inter, sans-serif',
         fontSize: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--base-font-size').trim()) || 16,
         fontWeightRegular: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--font-weight').trim()) || 400,
+        h1: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        h2: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        h3: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        h4: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        h5: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        h6: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-secondary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        body1: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        body2: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        caption: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-tertiary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
+        button: { fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-family-primary').trim() || 'Inter, sans-serif' },
       },
       components: {
         MuiCard: {
@@ -455,6 +558,39 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             root: {
               color: 'var(--text)',
             },
+            h1: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            h2: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            h3: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            h4: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            h5: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            h6: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary))',
+            },
+            body1: {
+              fontFamily: 'var(--font-family-primary)',
+            },
+            body2: {
+              fontFamily: 'var(--font-family-primary)',
+            },
+            caption: {
+              fontFamily: 'var(--font-family-tertiary, var(--font-family-primary))',
+            },
+            subtitle1: {
+              fontFamily: 'var(--font-family-primary)',
+            },
+            subtitle2: {
+              fontFamily: 'var(--font-family-primary)',
+            },
           },
         },
         MuiToggleButtonGroup: {
@@ -529,6 +665,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
           styleOverrides: {
             root: {
               color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-family-tertiary, var(--font-family-primary))',
               '&.Mui-focused': {
                 color: 'var(--primary)',
               },
@@ -539,6 +676,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
           styleOverrides: {
             root: {
               color: 'var(--text)',
+              fontFamily: 'var(--font-family-tertiary, var(--font-family-primary))',
               '&.Mui-focused': {
                 color: 'var(--primary)',
               },
@@ -589,7 +727,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         widgetGallery: { enabled: true, transparent: false, refreshInterval: 0, ...parsed.widgetGallery },
         primary: parsed.primary || '#9E7FFF',
         secondary: parsed.secondary || '#38bdf8',
-        accent: parsed.accent || '#f472b6'
+        accent: parsed.accent || '#f472b6',
+        loadingAnimationMode: parsed.loadingAnimationMode || 'startup'
       };
       setLocalWidgetSettings(settingsWithDefaults);
     }
@@ -597,13 +736,151 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     fetchUsers();
     fetchChores();
     fetchPrizes();
-    fetchPrizeMinimumShells();
-    fetchBonusChoreClamValue();
+    fetchPrizeMinimumCurrency();
+    fetchBonusChoreCurrencyValue();
+    fetchDailyChoresCompletionBonus();
+    fetchCurrencySettings();
     fetchUploadedWidgets();
     fetchCalendarSources();
     fetchDefaultCalendar();
     fetchPhotoSources();
     fetchPhotoWidgetSettings();
+    
+    // Fetch custom themes and fonts
+    getAllThemes().then(themes => {
+      setAllThemes(themes);
+      // Detect current presets after themes are loaded
+      const detected = detectCurrentPresets(themeSettings, themes);
+      if (detected.light) setLightPreset(detected.light);
+      if (detected.dark) setDarkPreset(detected.dark);
+    });
+    getAllFonts().then(fonts => {
+      setAllFonts(fonts);
+      
+      // Migrate old fontFamily to primaryFont if needed
+      const currentSettings = loadThemeSettings();
+      if (currentSettings && currentSettings.typography) {
+        if (currentSettings.typography.fontFamily && !currentSettings.typography.primaryFont) {
+          // Migrate old fontFamily to primaryFont
+          const migratedSettings = {
+            ...currentSettings,
+            typography: {
+              ...currentSettings.typography,
+              primaryFont: currentSettings.typography.fontFamily,
+              secondaryFont: currentSettings.typography.secondaryFont || currentSettings.typography.fontFamily,
+              tertiaryFont: currentSettings.typography.tertiaryFont || currentSettings.typography.fontFamily
+            }
+          };
+          // Remove old fontFamily
+          delete migratedSettings.typography.fontFamily;
+          setThemeSettings(migratedSettings);
+          saveThemeSettings(migratedSettings);
+          // Apply the migrated settings
+          const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+          applyThemeSettings(migratedSettings, currentTheme, false);
+          
+          // Load fonts for migrated settings
+          const typography = migratedSettings.typography;
+          if (typography.primaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.secondaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.tertiaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+        } else {
+          // Load fonts for all three font families on initial load
+          const typography = currentSettings.typography;
+          if (typography) {
+            if (typography.primaryFont) {
+              const font = fonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+              if (font && font.googleFontsUrl) loadGoogleFont(font);
+            }
+            if (typography.secondaryFont) {
+              const font = fonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+              if (font && font.googleFontsUrl) loadGoogleFont(font);
+            }
+            if (typography.tertiaryFont) {
+              const font = fonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+              if (font && font.googleFontsUrl) loadGoogleFont(font);
+            }
+          }
+        }
+      }
+    });
+  }, []);
+
+  // Detect presets when themeSettings or allThemes change
+  useEffect(() => {
+    if (Object.keys(allThemes).length > 0) {
+      const detected = detectCurrentPresets(themeSettings, allThemes);
+      setLightPreset(prev => detected.light !== prev ? detected.light : prev);
+      setDarkPreset(prev => detected.dark !== prev ? detected.dark : prev);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeSettings, allThemes]);
+
+  // Load fonts when themeSettings typography changes
+  useEffect(() => {
+    if (allFonts.length > 0 && themeSettings && themeSettings.typography) {
+      const typography = themeSettings.typography;
+      const fontsToLoad = [];
+      
+      if (typography.primaryFont) {
+        const font = allFonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+        if (font && font.googleFontsUrl) fontsToLoad.push(font);
+      }
+      if (typography.secondaryFont) {
+        const font = allFonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+        if (font && font.googleFontsUrl) fontsToLoad.push(font);
+      }
+      if (typography.tertiaryFont) {
+        const font = allFonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+        if (font && font.googleFontsUrl) fontsToLoad.push(font);
+      }
+      
+      fontsToLoad.forEach(font => loadGoogleFont(font));
+    }
+  }, [themeSettings?.typography?.primaryFont, themeSettings?.typography?.secondaryFont, themeSettings?.typography?.tertiaryFont, allFonts]);
+
+  // Sync themeSettings with localStorage when theme toggles (to catch external changes)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      // Reload theme settings from localStorage to stay in sync
+      const updatedSettings = loadThemeSettings();
+      if (updatedSettings) {
+        setThemeSettings(updatedSettings);
+        // Re-apply for current theme mode
+        const currentMode = document.documentElement.getAttribute('data-theme') || 'light';
+        applyThemeSettings(updatedSettings, currentMode, false);
+      }
+    };
+    
+    // Listen for storage events (when theme is toggled externally)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for theme toggle events from app.jsx
+    const handleThemeToggle = () => {
+      const updatedSettings = loadThemeSettings();
+      if (updatedSettings) {
+        setThemeSettings(updatedSettings);
+        const currentMode = document.documentElement.getAttribute('data-theme') || 'light';
+        applyThemeSettings(updatedSettings, currentMode, false);
+      }
+    };
+    
+    // Custom event for theme toggles (since storage event only fires in other tabs)
+    window.addEventListener('themeToggled', handleThemeToggle);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('themeToggled', handleThemeToggle);
+    };
   }, []);
 
   // Fetch photo sources
@@ -643,7 +920,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       await fetchPhotoWidgetSettings();
     } catch (error) {
       console.error('Error saving photo widget setting:', error);
-      alert('Failed to save setting. Please try again.');
+      setSaveMessage({ show: true, type: 'error', text: 'Failed to save setting. Please try again.' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     }
   };
 
@@ -704,6 +982,10 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       if (!fetchedSettings.ORIENTATION) {
         fetchedSettings.ORIENTATION = 'portrait';
       }
+      // Set default weather zip code if not present
+      if (!fetchedSettings.WEATHER_ZIP_CODE) {
+        fetchedSettings.WEATHER_ZIP_CODE = '14818';
+      }
       setSettings(fetchedSettings);
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -733,7 +1015,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   const fetchPrizes = async () => {
     try {
       const response = await axios.get(`${getApiUrl()}/api/prizes`);
-      setPrizes(Array.isArray(response.data) ? response.data : []);
+      const prizes = Array.isArray(response.data) ? response.data : [];
+      // Normalize currency_cost (support both for backward compatibility)
+      const normalizedPrizes = prizes.map(prize => ({
+        ...prize,
+        currency_cost: prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0)
+      }));
+      setPrizes(normalizedPrizes);
     } catch (error) {
       console.error('Error fetching prizes:', error);
       setPrizes([]);
@@ -814,23 +1102,36 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
       return;
     }
-    if (window.confirm('Are you sure you want to delete this calendar?')) {
-      try {
-        await axios.delete(`${getApiUrl()}/api/calendar-sources/${calendarId}`);
-        await fetchCalendarSources();
-      } catch (error) {
-        console.error('Error deleting calendar:', error);
-        alert('Failed to delete calendar. Please try again.');
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete Calendar',
+      message: 'Are you sure you want to delete this calendar?',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          await axios.delete(`${getApiUrl()}/api/calendar-sources/${calendarId}`);
+          await fetchCalendarSources();
+          setSaveMessage({ show: true, type: 'success', text: 'Calendar deleted successfully!' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        } catch (error) {
+          console.error('Error deleting calendar:', error);
+          setSaveMessage({ show: true, type: 'error', text: 'Failed to delete calendar. Please try again.' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+        }
       }
-    }
+    });
   };
 
   const handleSetDefaultCalendar = async (calendarId) => {
     try {
       await axios.put(`${getApiUrl()}/api/settings/DEFAULT_CALENDAR_ID`, {
         value: calendarId.toString()
+      }, {
+        headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' }
       });
       setDefaultCalendarId(calendarId);
+      // Refresh to ensure state is in sync
+      await fetchDefaultCalendar();
       setSaveMessage({ show: true, type: 'success', text: 'Default calendar set successfully!' });
       setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
@@ -1110,6 +1411,15 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       
       current[keys[keys.length - 1]] = value;
       
+      // Load Google Fonts if a font family is being changed
+      if (path.startsWith('typography.') && (path.includes('primaryFont') || path.includes('secondaryFont') || path.includes('tertiaryFont'))) {
+        const fontFamily = value;
+        const selectedFont = allFonts.find(f => f.fontFamily === fontFamily || f.id === fontFamily);
+        if (selectedFont && selectedFont.googleFontsUrl) {
+          loadGoogleFont(selectedFont);
+        }
+      }
+      
       // Apply changes immediately for preview (use current theme, not previewTheme)
       const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
       applyThemeSettings(newSettings, currentTheme, true);
@@ -1145,17 +1455,76 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
   };
 
-  const applyPreset = (presetName) => {
+  // Helper function to compare theme colors (ignoring gradients and other settings)
+  const colorsMatch = (colors1, colors2) => {
+    if (!colors1 || !colors2) return false;
+    const keys = ['primary', 'secondary', 'accent', 'background', 'surface', 'cardBg', 'text', 'textSecondary', 'border', 'cardBorder', 'success', 'warning', 'error'];
+    return keys.every(key => colors1[key] === colors2[key]);
+  };
+
+  // Detect which presets match current theme settings
+  const detectCurrentPresets = (settings, themes) => {
+    let detectedLight = null;
+    let detectedDark = null;
+    
+    if (settings && settings.colors) {
+      Object.entries(themes).forEach(([key, preset]) => {
+        if (preset.settings && preset.settings.colors) {
+          // Check light mode
+          if (colorsMatch(settings.colors.light, preset.settings.colors.light)) {
+            detectedLight = key;
+          }
+          // Check dark mode
+          if (colorsMatch(settings.colors.dark, preset.settings.colors.dark)) {
+            detectedDark = key;
+          }
+        }
+      });
+    }
+    
+    return { light: detectedLight, dark: detectedDark };
+  };
+
+  const applyPreset = (presetName, mode = null) => {
     if (presetName === 'custom') {
       // Keep current settings
       return;
     }
-    const preset = themePresets[presetName];
+    const preset = allThemes[presetName];
     if (preset) {
-      setThemeSettings(preset.settings);
-      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-      applyThemeSettings(preset.settings, currentTheme, true);
-      setSaveMessage({ show: true, type: 'success', text: `Applied ${preset.name} theme! Click Save to persist.` });
+      const targetMode = mode || (document.documentElement.getAttribute('data-theme') || 'light');
+      
+      // Merge preset settings with current settings, only updating the specified mode's colors
+      const updatedSettings = {
+        ...themeSettings,
+        colors: {
+          ...themeSettings.colors,
+          [targetMode]: {
+            ...preset.settings.colors[targetMode]
+          }
+        }
+      };
+      
+      // Update local state
+      setThemeSettings(updatedSettings);
+
+      // Persist to localStorage so toggling themes keeps the applied preset
+      saveThemeSettings(updatedSettings);
+
+      // Apply for the target mode (not preview)
+      applyThemeSettings(updatedSettings, targetMode, false);
+
+      // Notify the rest of the app that the theme has changed
+      window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { theme: targetMode, settings: updatedSettings } }));
+      
+      // Update preset selection state
+      if (targetMode === 'light') {
+        setLightPreset(presetName);
+      } else {
+        setDarkPreset(presetName);
+      }
+      
+      setSaveMessage({ show: true, type: 'success', text: `Applied and saved ${preset.name} theme for ${targetMode} mode.` });
       setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     }
   };
@@ -1170,16 +1539,95 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     const file = event.target.files[0];
     if (file) {
       importThemeSettings(file)
-        .then(settings => {
-          setThemeSettings(settings);
-          const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-          applyThemeSettings(settings, currentTheme, true);
-          setSaveMessage({ show: true, type: 'success', text: 'Theme imported successfully! Click Save to persist.' });
-          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        .then(async (settings) => {
+          try {
+            // Apply imported settings immediately for preview
+            setThemeSettings(settings);
+            const currentTheme =
+              document.documentElement.getAttribute('data-theme') || 'light';
+            applyThemeSettings(settings, currentTheme, true);
+
+            // Determine if this theme/palette has already been imported or generated on the server
+            const rawId = typeof settings.id === 'string' ? settings.id : '';
+            const alreadyImported =
+              rawId.startsWith('imported-') ||
+              rawId.startsWith('palette-imported-') ||
+              rawId.startsWith('palette-');
+
+            // If this looks like a palette with color settings and hasn't been imported yet,
+            // save it as a reusable custom preset on the server.
+            if (settings.colors && !alreadyImported) {
+              const apiUrl = getApiUrl();
+
+              const baseName = file.name.replace(/\.json$/i, '');
+              const paletteId =
+                rawId && !rawId.startsWith('palette-')
+                  ? `palette-imported-${rawId}`
+                  : `palette-imported-${Date.now()}`;
+
+              const paletteName =
+                settings.name || baseName || 'Imported Palette';
+
+              const paletteToSave = {
+                id: paletteId,
+                name: paletteName,
+                settings: {
+                  colors: {
+                    light:
+                      settings.colors.light ||
+                      defaultThemeSettings.colors.light,
+                    dark:
+                      settings.colors.dark ||
+                      defaultThemeSettings.colors.dark,
+                    gradients:
+                      settings.colors.gradients ||
+                      defaultThemeSettings.colors.gradients
+                  }
+                }
+              };
+
+              await axios.post(`${apiUrl}/api/palette/save`, paletteToSave);
+
+              // Refresh presets so the imported palette appears in All Available Presets
+              const updatedThemes = await getAllThemes();
+              setAllThemes(updatedThemes);
+            }
+
+            setSaveMessage({
+              show: true,
+              type: 'success',
+              text: 'Theme imported successfully! It is now available as a preset. Click Save to persist.'
+            });
+            setTimeout(
+              () => setSaveMessage({ show: false, type: '', text: '' }),
+              3000
+            );
+          } catch (error) {
+            console.error('[AdminPanel] Error importing theme/palette:', error);
+            setSaveMessage({
+              show: true,
+              type: 'error',
+              text:
+                error?.response?.data?.error ||
+                error.message ||
+                'Failed to import theme. Please check the file format.'
+            });
+            setTimeout(
+              () => setSaveMessage({ show: false, type: '', text: '' }),
+              4000
+            );
+          }
         })
-        .catch(error => {
-          setSaveMessage({ show: true, type: 'error', text: error.message });
-          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        .catch((error) => {
+          setSaveMessage({
+            show: true,
+            type: 'error',
+            text: error.message
+          });
+          setTimeout(
+            () => setSaveMessage({ show: false, type: '', text: '' }),
+            3000
+          );
         });
     }
     // Reset input
@@ -1254,11 +1702,11 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     try {
       setIsLoading(true);
       await axios.patch(`${getApiUrl()}/api/users/${userId}/clams`, {
-        clam_total: newTotal
+        currency_total: newTotal
       });
       fetchUsers();
     } catch (error) {
-      console.error('Error updating user clams:', error);
+      console.error('Error updating user currency:', error);
     } finally {
       setIsLoading(false);
     }
@@ -1271,7 +1719,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         // Ensure emoji is always included, even if empty
         const prizeData = {
           name: editingPrize.name,
-          clam_cost: editingPrize.clam_cost,
+          currency_cost: editingPrize.currency_cost,
           emoji: editingPrize.emoji || ''
         };
         await axios.patch(`${getApiUrl()}/api/prizes/${editingPrize.id}`, prizeData);
@@ -1279,11 +1727,11 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         // Ensure emoji is always included, even if empty
         const prizeData = {
           name: newPrize.name,
-          clam_cost: newPrize.clam_cost,
+          currency_cost: newPrize.currency_cost,
           emoji: newPrize.emoji || ''
         };
         await axios.post(`${getApiUrl()}/api/prizes`, prizeData);
-        setNewPrize({ name: '', clam_cost: 0, emoji: '' });
+        setNewPrize({ name: '', currency_cost: 0, emoji: '' });
       }
       setEditingPrize(null);
       fetchPrizes();
@@ -1295,74 +1743,219 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   };
 
   const deletePrize = async (prizeId) => {
-    if (window.confirm('Are you sure you want to delete this prize?')) {
-      try {
-        setIsLoading(true);
-        await axios.delete(`${getApiUrl()}/api/prizes/${prizeId}`);
-        fetchPrizes();
-      } catch (error) {
-        console.error('Error deleting prize:', error);
-      } finally {
-        setIsLoading(false);
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete Prize',
+      message: 'Are you sure you want to delete this prize?',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          setIsLoading(true);
+          await axios.delete(`${getApiUrl()}/api/prizes/${prizeId}`);
+          fetchPrizes();
+          setSaveMessage({ show: true, type: 'success', text: 'Prize deleted successfully!' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        } catch (error) {
+          console.error('Error deleting prize:', error);
+          setSaveMessage({ show: true, type: 'error', text: 'Failed to delete prize. Please try again.' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+        } finally {
+          setIsLoading(false);
+        }
       }
-    }
+    });
   };
 
-  const fetchPrizeMinimumShells = async () => {
+  const fetchPrizeMinimumCurrency = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_SHELLS`);
-      setPrizeMinimumShells(response.data.value || 0);
+      const response = await axios.get(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_CURRENCY`);
+      setPrizeMinimumCurrency(response.data.value || 0);
     } catch (error) {
-      console.error('Error fetching minimum shells setting:', error);
-      setPrizeMinimumShells(0);
+      console.error('Error fetching minimum currency setting:', error);
+      setPrizeMinimumCurrency(0);
     }
   };
 
-  const savePrizeMinimumShells = async () => {
+  const savePrizeMinimumCurrency = async () => {
     if (!isAuthenticated) {
-      alert('Admin PIN required to save settings');
+      setSaveMessage({ show: true, type: 'error', text: 'Admin PIN required to save settings' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
       return;
     }
     try {
       setIsLoading(true);
-      await axios.put(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_SHELLS`, 
-        { value: prizeMinimumShells },
+      await axios.put(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_CURRENCY`, 
+        { value: prizeMinimumCurrency },
         { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
       );
-      alert('Minimum shells setting saved successfully');
+      setSaveMessage({ show: true, type: 'success', text: 'Minimum currency setting saved successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
-      console.error('Error saving minimum shells setting:', error);
-      alert('Failed to save minimum shells setting');
+      console.error('Error saving minimum currency setting:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save minimum currency setting';
+      setSaveMessage({ show: true, type: 'error', text: errorMessage });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchBonusChoreClamValue = async () => {
+  const fetchBonusChoreCurrencyValue = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`);
-      setBonusChoreClamValue(response.data.value ? parseInt(response.data.value) : 1);
+      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CURRENCY_VALUE`);
+      // Properly handle 0 as a valid value (check for null/undefined, not falsy)
+      const value = response.data?.value;
+      const parsedValue = value !== null && value !== undefined ? parseInt(value) : null;
+      setBonusChoreCurrencyValue((parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 1);
     } catch (error) {
-      console.error('Error fetching bonus chore clam value setting:', error);
-      setBonusChoreClamValue(1);
+      console.error('Error fetching bonus chore currency value setting:', error);
+      setBonusChoreCurrencyValue(1);
     }
   };
 
-  const saveBonusChoreClamValue = async () => {
+  const fetchDailyChoresCompletionBonus = async () => {
+    try {
+      const response = await axios.get(`${getApiUrl()}/api/settings/DAILY_CHORES_COMPLETION_BONUS`);
+      // Properly handle 0 as a valid value (check for null/undefined, not falsy)
+      const value = response.data?.value;
+      const parsedValue = value !== null && value !== undefined ? parseInt(value) : null;
+      setDailyChoresCompletionBonus((parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 2);
+    } catch (error) {
+      console.error('Error fetching daily chores completion bonus setting:', error);
+      setDailyChoresCompletionBonus(2);
+    }
+  };
+
+  const saveBonusChoreCurrencyValue = async () => {
     if (!isAuthenticated) {
-      alert('Admin PIN required to save settings');
+      setSaveMessage({ show: true, type: 'error', text: 'Admin PIN required to save settings' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
       return;
     }
     try {
       setIsLoading(true);
-      await axios.put(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`, 
-        { value: bonusChoreClamValue },
-        { headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' } }
-      );
-      alert('Bonus chore clam value saved successfully');
+      // Use POST like currency settings (more reliable)
+      await axios.post(`${getApiUrl()}/api/settings`, {
+        key: 'BONUS_CHORE_CURRENCY_VALUE',
+        value: bonusChoreCurrencyValue.toString()
+      });
+      // Refresh the value from server to ensure it's persisted correctly
+      await fetchBonusChoreCurrencyValue();
+      setSaveMessage({ show: true, type: 'success', text: 'Bonus chore currency value saved successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
-      console.error('Error saving bonus chore clam value setting:', error);
-      alert('Failed to save bonus chore clam value setting');
+      console.error('Error saving bonus chore currency value setting:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save bonus chore currency value setting';
+      setSaveMessage({ show: true, type: 'error', text: errorMessage });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveDailyChoresCompletionBonus = async () => {
+    if (!isAuthenticated) {
+      setSaveMessage({ show: true, type: 'error', text: 'Admin PIN required to save settings' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      // Use POST like currency settings (more reliable)
+      await axios.post(`${getApiUrl()}/api/settings`, {
+        key: 'DAILY_CHORES_COMPLETION_BONUS',
+        value: dailyChoresCompletionBonus.toString()
+      });
+      // Refresh the value from server to ensure it's persisted correctly
+      await fetchDailyChoresCompletionBonus();
+      setSaveMessage({ show: true, type: 'success', text: 'Daily chores completion bonus saved successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+    } catch (error) {
+      console.error('Error saving daily chores completion bonus setting:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save daily chores completion bonus setting';
+      setSaveMessage({ show: true, type: 'error', text: errorMessage });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveMarbleDailyIncrement = async () => {
+    if (!isAuthenticated) {
+      setSaveMessage({ show: true, type: 'error', text: 'Admin PIN required to save settings' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      // Use POST like other settings (more reliable)
+      await axios.post(`${getApiUrl()}/api/settings`, {
+        key: 'MARBLE_DAILY_INCREMENT',
+        value: (marbleSettings.daily_increment ?? 3).toString()
+      });
+      await fetchMarbleSettings();
+      setSaveMessage({ show: true, type: 'success', text: 'Daily increment saved successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+    } catch (error) {
+      console.error('Error saving marble daily increment setting:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save marble daily increment setting';
+      setSaveMessage({ show: true, type: 'error', text: errorMessage });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCurrencySettings = async () => {
+    try {
+      const [singularRes, pluralRes, emojiRes] = await Promise.all([
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_NAME_SINGULAR`),
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_NAME_PLURAL`),
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_EMOJI`)
+      ]);
+      setCurrencyName(singularRes.data.value || 'Clam');
+      setCurrencyNamePlural(pluralRes.data.value || 'Clams');
+      setCurrencyEmoji(emojiRes.data.value || '🥟');
+    } catch (error) {
+      console.error('Error fetching currency settings:', error);
+      // Use defaults
+      setCurrencyName('Clam');
+      setCurrencyNamePlural('Clams');
+      setCurrencyEmoji('🥟');
+    }
+  };
+
+  const saveCurrencySettings = async () => {
+    if (!isAuthenticated) {
+      setSaveMessage({ show: true, type: 'error', text: 'Admin PIN required to save settings' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const results = await Promise.all([
+        axios.post(`${getApiUrl()}/api/settings`, {
+          key: 'CURRENCY_NAME_SINGULAR',
+          value: currencyName
+        }),
+        axios.post(`${getApiUrl()}/api/settings`, {
+          key: 'CURRENCY_NAME_PLURAL',
+          value: currencyNamePlural
+        }),
+        axios.post(`${getApiUrl()}/api/settings`, {
+          key: 'CURRENCY_EMOJI',
+          value: currencyEmoji
+        })
+      ]);
+      // Refresh currency settings after successful save
+      await fetchCurrencySettings();
+      setSaveMessage({ show: true, type: 'success', text: 'Currency settings saved successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+    } catch (error) {
+      console.error('Error saving currency settings:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to save currency settings';
+      setSaveMessage({ show: true, type: 'error', text: `Error: ${errorMessage}` });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -1382,27 +1975,40 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       });
       fetchUploadedWidgets();
       if (onWidgetUploaded) onWidgetUploaded();
+      setSaveMessage({ show: true, type: 'success', text: 'Widget uploaded successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
       console.error('Error uploading widget:', error);
-      alert('Failed to upload widget. Please try again.');
+      setSaveMessage({ show: true, type: 'error', text: 'Failed to upload widget. Please try again.' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
     } finally {
       setIsLoading(false);
     }
   };
 
   const deleteWidget = async (filename) => {
-    if (window.confirm('Are you sure you want to delete this widget?')) {
-      try {
-        setIsLoading(true);
-        await axios.delete(`${getApiUrl()}/api/widgets/${filename}`);
-        fetchUploadedWidgets();
-        if (onWidgetUploaded) onWidgetUploaded();
-      } catch (error) {
-        console.error('Error deleting widget:', error);
-      } finally {
-        setIsLoading(false);
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete Widget',
+      message: 'Are you sure you want to delete this widget?',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          setIsLoading(true);
+          await axios.delete(`${getApiUrl()}/api/widgets/${filename}`);
+          fetchUploadedWidgets();
+          if (onWidgetUploaded) onWidgetUploaded();
+          setSaveMessage({ show: true, type: 'success', text: 'Widget deleted successfully!' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        } catch (error) {
+          console.error('Error deleting widget:', error);
+          setSaveMessage({ show: true, type: 'error', text: 'Failed to delete widget. Please try again.' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+        } finally {
+          setIsLoading(false);
+        }
       }
-    }
+    });
   };
 
   const installGithubWidget = async (widget) => {
@@ -1415,10 +2021,12 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       });
       fetchUploadedWidgets();
       if (onWidgetUploaded) onWidgetUploaded();
-      alert(`Widget "${widget.name}" installed successfully!`);
+      setSaveMessage({ show: true, type: 'success', text: `Widget "${widget.name}" installed successfully!` });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
       console.error('Error installing GitHub widget:', error);
-      alert('Failed to install widget. Please try again.');
+      setSaveMessage({ show: true, type: 'error', text: 'Failed to install widget. Please try again.' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -1434,22 +2042,31 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   };
 
   const deleteChore = async (choreId) => {
-    if (window.confirm('Are you sure you want to delete this chore?')) {
-      try {
-        setIsLoading(true);
-        await axios.delete(`${getApiUrl()}/api/chores/${choreId}`);
-        fetchChores();
-        if (choreModal.user) {
-          const updatedUserChores = chores.filter(chore => chore.user_id === choreModal.user.id && chore.id !== choreId);
-          setChoreModal(prev => ({ ...prev, userChores: updatedUserChores }));
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete Chore',
+      message: 'Are you sure you want to delete this chore?',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          setIsLoading(true);
+          await axios.delete(`${getApiUrl()}/api/chores/${choreId}`);
+          fetchChores();
+          if (choreModal.user) {
+            const updatedUserChores = chores.filter(chore => chore.user_id === choreModal.user.id && chore.id !== choreId);
+            setChoreModal(prev => ({ ...prev, userChores: updatedUserChores }));
+          }
+          setSaveMessage({ show: true, type: 'success', text: 'Chore deleted successfully!' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        } catch (error) {
+          console.error('Error deleting chore:', error);
+          setSaveMessage({ show: true, type: 'error', text: 'Failed to delete chore. Please try again.' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error deleting chore:', error);
-        alert('Failed to delete chore. Please try again.');
-      } finally {
-        setIsLoading(false);
       }
-    }
+    });
   };
 
   const deleteAllUserChores = async (userId) => {
@@ -1457,30 +2074,39 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     const choreCount = userChores.length;
     
     if (choreCount === 0) {
-      alert('This user has no chores to delete.');
+      setSaveMessage({ show: true, type: 'info', text: 'This user has no chores to delete.' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
       return;
     }
 
-    if (window.confirm(`Are you sure you want to delete all ${choreCount} chore${choreCount !== 1 ? 's' : ''} for this user? This action cannot be undone.`)) {
-      try {
-        setIsLoading(true);
-        // Delete all chores for this user
-        const deletePromises = userChores.map(chore => 
-          axios.delete(`${getApiUrl()}/api/chores/${chore.id}`)
-        );
-        await Promise.all(deletePromises);
-        fetchChores();
-        if (choreModal.user && choreModal.user.id === userId) {
-          setChoreModal(prev => ({ ...prev, userChores: [] }));
+    setConfirmationDialog({
+      open: true,
+      title: 'Delete All Chores',
+      message: `Are you sure you want to delete all ${choreCount} chore${choreCount !== 1 ? 's' : ''} for this user? This action cannot be undone.`,
+      severity: 'error',
+      onConfirm: async () => {
+        try {
+          setIsLoading(true);
+          // Delete all chores for this user
+          const deletePromises = userChores.map(chore => 
+            axios.delete(`${getApiUrl()}/api/chores/${chore.id}`)
+          );
+          await Promise.all(deletePromises);
+          fetchChores();
+          if (choreModal.user && choreModal.user.id === userId) {
+            setChoreModal(prev => ({ ...prev, userChores: [] }));
+          }
+          setSaveMessage({ show: true, type: 'success', text: `Successfully deleted ${choreCount} chore${choreCount !== 1 ? 's' : ''}.` });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+        } catch (error) {
+          console.error('Error deleting chores:', error);
+          setSaveMessage({ show: true, type: 'error', text: 'Failed to delete some chores. Please try again.' });
+          setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+        } finally {
+          setIsLoading(false);
         }
-        alert(`Successfully deleted ${choreCount} chore${choreCount !== 1 ? 's' : ''}.`);
-      } catch (error) {
-        console.error('Error deleting chores:', error);
-        alert('Failed to delete some chores. Please try again.');
-      } finally {
-        setIsLoading(false);
       }
-    }
+    });
   };
 
   const handleProfilePictureUpload = async (userId, event) => {
@@ -1498,9 +2124,12 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       fetchUsers();
+      setSaveMessage({ show: true, type: 'success', text: 'Profile picture uploaded successfully!' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
     } catch (error) {
       console.error('Error uploading profile picture:', error);
-      alert('Failed to upload profile picture. Please try again.');
+      setSaveMessage({ show: true, type: 'error', text: 'Failed to upload profile picture. Please try again.' });
+      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -1721,18 +2350,79 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
     return option ? option.label : 'Disabled';
   };
 
-  const tabs = [
-    'APIs',
-    'Widgets',
-    'Calendars',
-    'Photos',
-    'Interface',
-    'Users',
-    'Prizes',
-    'House Rules',
-    'Marbles',
-    'Plugins'
-  ];
+  const handleDesignerOpenModeChange = (event) => {
+    const value = event.target.checked;
+    setDesignerOpenInNewTab(value);
+    try {
+      localStorage.setItem('designerOpenInNewTab', JSON.stringify(value));
+    } catch (e) {
+      console.error('Error saving designer open-mode setting to localStorage:', e);
+    }
+  };
+
+  const handleOpenDesigner = () => {
+    const url = 'http://localhost:5175';
+    if (designerOpenInNewTab) {
+      window.open(url, '_blank');
+    } else {
+      window.location.href = url;
+    }
+  };
+
+  // Widget tab mapping
+  const widgetTabMap = {
+    chores: 'Chores',
+    calendar: 'Calendar',
+    photos: 'Photos',
+    weather: 'Weather',
+    todos: 'Todos',
+    notes: 'Notes',
+    alarms: 'Alarms',
+    houseRules: 'House Rules',
+    marbles: 'Marbles',
+    groceryList: 'Grocery List',
+    mealPlanner: 'Meal Planner',
+    mealSuggestionBox: 'Meal Suggestion Box'
+  };
+
+  // Dynamic tab generation
+  const getTabs = () => {
+    // Base tabs sorted alphabetically
+    const baseTabs = ['General', 'Interface', 'Plugins', 'Users', 'Widgets'];
+    const separator = { type: 'separator', label: '─' };
+    
+    // Get enabled widget tabs, sorted alphabetically
+    const enabledWidgetTabs = Object.entries(widgetTabMap)
+      .filter(([key]) => widgetSettings[key]?.enabled)
+      .map(([, label]) => label)
+      .sort((a, b) => a.localeCompare(b));
+    
+    return [...baseTabs, separator, ...enabledWidgetTabs];
+  };
+
+  const tabs = getTabs();
+
+  // Helper to get widget tab index
+  const getWidgetTabIndex = (widgetKey) => {
+    const baseTabCount = 5; // General, Interface, Plugins, Users, Widgets
+    const separatorIndex = baseTabCount; // Separator is at index 5
+    // Get enabled widgets sorted by their display names (alphabetically)
+    const enabledWidgets = Object.entries(widgetTabMap)
+      .filter(([key]) => widgetSettings[key]?.enabled)
+      .sort(([keyA], [keyB]) => {
+        const nameA = widgetTabMap[keyA] || keyA;
+        const nameB = widgetTabMap[keyB] || keyB;
+        return nameA.localeCompare(nameB);
+      })
+      .map(([key]) => key);
+    const widgetIndex = enabledWidgets.indexOf(widgetKey);
+    return widgetIndex >= 0 ? separatorIndex + 1 + widgetIndex : -1;
+  };
+
+  // Helper to check if current tab is a specific widget tab
+  const isWidgetTab = (widgetKey) => {
+    return activeTab === getWidgetTabIndex(widgetKey);
+  };
 
   // Fetch house rules
   const fetchHouseRules = async () => {
@@ -1762,9 +2452,15 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
   const fetchMarbleSettings = async () => {
     try {
       const response = await axios.get(`${getApiUrl()}/api/marbles/settings`);
-      setMarbleSettings(response.data || { daily_increment: 3 });
+      // Properly handle 0 as a valid value
+      const dailyIncrement = response.data?.daily_increment;
+      const parsedValue = dailyIncrement !== null && dailyIncrement !== undefined ? parseInt(dailyIncrement) : null;
+      setMarbleSettings({ 
+        daily_increment: (parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 3 
+      });
     } catch (error) {
       console.error('Error fetching marble settings:', error);
+      setMarbleSettings({ daily_increment: 3 });
     }
   };
 
@@ -1783,14 +2479,16 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
 
   // Load data when tabs are active
   useEffect(() => {
-    if (activeTab === 3 && isAuthenticated) { // Photos tab
+    // Photos tab is now a widget tab, handled dynamically
+    if (isWidgetTab('photos') && isAuthenticated) {
       fetchPhotoSources();
       fetchPhotoWidgetSettings();
     }
-    if (activeTab === 7 && isAuthenticated) { // House Rules tab
+    // House Rules and Marbles are now widget tabs, handled dynamically
+    if (isWidgetTab('houseRules') && isAuthenticated) {
       fetchHouseRules();
     }
-    if (activeTab === 8 && isAuthenticated) { // Marbles tab
+    if (isWidgetTab('marbles') && isAuthenticated) {
       fetchMarbles();
       fetchMarbleSettings();
     }
@@ -1947,22 +2645,58 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         )}
 
       <Tabs value={activeTab} onChange={(e, newValue) => {
-        if (!isAuthenticated && (newValue === 3 || newValue === 7 || newValue === 8)) {
+        // Check if tab requires authentication (Photos, House Rules, Marbles - these are now widget tabs)
+        // Base tabs that require auth: Users (index 3 in sorted order: General=0, Interface=1, Plugins=2, Users=3, Widgets=4)
+        // Widget tabs that require auth will be handled individually
+        const tabItem = tabs[newValue];
+        if (tabItem && typeof tabItem === 'object' && tabItem.type === 'separator') {
+          return; // Don't allow selecting separator
+        }
+        // Users tab is at index 3 in alphabetically sorted base tabs
+        if (!isAuthenticated && newValue === 3) { // Users tab
           setShowPinDialog(true);
           return;
         }
         setActiveTab(newValue);
       }} sx={{ mb: 3 }}>
-        {tabs.map((tab, index) => (
-          <Tab key={tab} label={tab} disabled={!isAuthenticated && (index === 3 || index === 7 || index === 8)} />
-        ))}
+        {tabs.map((tab, index) => {
+          if (typeof tab === 'object' && tab.type === 'separator') {
+            return (
+              <Tab
+                key={`separator-${index}`}
+                label="─"
+                disabled
+                sx={{
+                  minWidth: 'auto',
+                  width: 'auto',
+                  padding: '0 8px',
+                  cursor: 'default',
+                  opacity: 0.5,
+                  '&.Mui-disabled': {
+                    opacity: 0.5
+                  }
+                }}
+              />
+            );
+          }
+          const tabLabel = typeof tab === 'string' ? tab : tab.label;
+          // Users tab (index 3 in sorted order: General=0, Interface=1, Plugins=2, Users=3, Widgets=4) requires authentication
+          const requiresAuth = index === 3;
+          return (
+            <Tab
+              key={tabLabel}
+              label={tabLabel}
+              disabled={!isAuthenticated && requiresAuth}
+            />
+          );
+        })}
       </Tabs>
 
-      {/* APIs Tab */}
+      {/* General Tab */}
       {activeTab === 0 && (
         <Card>
           <CardContent sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>API Configuration</Typography>
+            <Typography variant="h6" gutterBottom>General Settings</Typography>
 
             {saveMessage.show && (
               <Alert severity={saveMessage.type} sx={{ mb: 2 }}>
@@ -1970,82 +2704,122 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               </Alert>
             )}
 
-            <TextField
-              fullWidth
-              label="OpenWeatherMap API Key"
-              type="password"
-              value={settings.WEATHER_API_KEY || ''}
-              onChange={(e) => setSettings(prev => ({ ...prev, WEATHER_API_KEY: e.target.value }))}
-              sx={{ mb: 2 }}
-              helperText="Get your free API key from openweathermap.org"
-            />
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Network & Time</Typography>
+              <TextField
+                fullWidth
+                label="Proxy Whitelist (comma-separated domains)"
+                value={settings.PROXY_WHITELIST || ''}
+                onChange={(e) => setSettings(prev => ({ ...prev, PROXY_WHITELIST: e.target.value }))}
+                sx={{ mb: 2 }}
+                helperText="Domains allowed for proxy requests (e.g., api.example.com, another-api.com)"
+              />
 
-            <TextField
-              fullWidth
-              label="Proxy Whitelist (comma-separated domains)"
-              value={settings.PROXY_WHITELIST || ''}
-              onChange={(e) => setSettings(prev => ({ ...prev, PROXY_WHITELIST: e.target.value }))}
-              sx={{ mb: 2 }}
-              helperText="Domains allowed for proxy requests (e.g., api.example.com, another-api.com)"
-            />
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Timezone</InputLabel>
+                <Select
+                  value={settings.TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'}
+                  onChange={(e) => setSettings(prev => ({ ...prev, TIMEZONE: e.target.value }))}
+                  label="Timezone"
+                >
+                  <MenuItem value="America/New_York">Eastern Time (US & Canada)</MenuItem>
+                  <MenuItem value="America/Chicago">Central Time (US & Canada)</MenuItem>
+                  <MenuItem value="America/Denver">Mountain Time (US & Canada)</MenuItem>
+                  <MenuItem value="America/Los_Angeles">Pacific Time (US & Canada)</MenuItem>
+                  <MenuItem value="America/Phoenix">Arizona</MenuItem>
+                  <MenuItem value="America/Anchorage">Alaska</MenuItem>
+                  <MenuItem value="Pacific/Honolulu">Hawaii</MenuItem>
+                  <MenuItem value="America/Toronto">Toronto</MenuItem>
+                  <MenuItem value="America/Vancouver">Vancouver</MenuItem>
+                  <MenuItem value="Europe/London">London</MenuItem>
+                  <MenuItem value="Europe/Paris">Paris</MenuItem>
+                  <MenuItem value="Europe/Berlin">Berlin</MenuItem>
+                  <MenuItem value="Europe/Rome">Rome</MenuItem>
+                  <MenuItem value="Europe/Madrid">Madrid</MenuItem>
+                  <MenuItem value="Europe/Amsterdam">Amsterdam</MenuItem>
+                  <MenuItem value="Europe/Stockholm">Stockholm</MenuItem>
+                  <MenuItem value="Europe/Moscow">Moscow</MenuItem>
+                  <MenuItem value="Asia/Tokyo">Tokyo</MenuItem>
+                  <MenuItem value="Asia/Shanghai">Shanghai</MenuItem>
+                  <MenuItem value="Asia/Hong_Kong">Hong Kong</MenuItem>
+                  <MenuItem value="Asia/Singapore">Singapore</MenuItem>
+                  <MenuItem value="Asia/Dubai">Dubai</MenuItem>
+                  <MenuItem value="Asia/Kolkata">Mumbai, Kolkata</MenuItem>
+                  <MenuItem value="Australia/Sydney">Sydney</MenuItem>
+                  <MenuItem value="Australia/Melbourne">Melbourne</MenuItem>
+                  <MenuItem value="Australia/Perth">Perth</MenuItem>
+                  <MenuItem value="Pacific/Auckland">Auckland</MenuItem>
+                  <MenuItem value="UTC">UTC</MenuItem>
+                </Select>
+              </FormControl>
+              <Typography variant="caption" sx={{ mb: 2, display: 'block', color: 'var(--text-secondary)' }}>
+                All datetime operations in the app will use this timezone.
+              </Typography>
 
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Timezone</InputLabel>
-              <Select
-                value={settings.TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'}
-                onChange={(e) => setSettings(prev => ({ ...prev, TIMEZONE: e.target.value }))}
-                label="Timezone"
+              <Button
+                variant="contained"
+                onClick={saveAllApiSettings}
+                disabled={isLoading}
+                startIcon={<Save />}
+                sx={{ mt: 2 }}
               >
-                <MenuItem value="America/New_York">Eastern Time (US & Canada)</MenuItem>
-                <MenuItem value="America/Chicago">Central Time (US & Canada)</MenuItem>
-                <MenuItem value="America/Denver">Mountain Time (US & Canada)</MenuItem>
-                <MenuItem value="America/Los_Angeles">Pacific Time (US & Canada)</MenuItem>
-                <MenuItem value="America/Phoenix">Arizona</MenuItem>
-                <MenuItem value="America/Anchorage">Alaska</MenuItem>
-                <MenuItem value="Pacific/Honolulu">Hawaii</MenuItem>
-                <MenuItem value="America/Toronto">Toronto</MenuItem>
-                <MenuItem value="America/Vancouver">Vancouver</MenuItem>
-                <MenuItem value="Europe/London">London</MenuItem>
-                <MenuItem value="Europe/Paris">Paris</MenuItem>
-                <MenuItem value="Europe/Berlin">Berlin</MenuItem>
-                <MenuItem value="Europe/Rome">Rome</MenuItem>
-                <MenuItem value="Europe/Madrid">Madrid</MenuItem>
-                <MenuItem value="Europe/Amsterdam">Amsterdam</MenuItem>
-                <MenuItem value="Europe/Stockholm">Stockholm</MenuItem>
-                <MenuItem value="Europe/Moscow">Moscow</MenuItem>
-                <MenuItem value="Asia/Tokyo">Tokyo</MenuItem>
-                <MenuItem value="Asia/Shanghai">Shanghai</MenuItem>
-                <MenuItem value="Asia/Hong_Kong">Hong Kong</MenuItem>
-                <MenuItem value="Asia/Singapore">Singapore</MenuItem>
-                <MenuItem value="Asia/Dubai">Dubai</MenuItem>
-                <MenuItem value="Asia/Kolkata">Mumbai, Kolkata</MenuItem>
-                <MenuItem value="Australia/Sydney">Sydney</MenuItem>
-                <MenuItem value="Australia/Melbourne">Melbourne</MenuItem>
-                <MenuItem value="Australia/Perth">Perth</MenuItem>
-                <MenuItem value="Pacific/Auckland">Auckland</MenuItem>
-                <MenuItem value="UTC">UTC</MenuItem>
-              </Select>
-            </FormControl>
-            <Typography variant="caption" sx={{ mb: 2, display: 'block', color: 'var(--text-secondary)' }}>
-              All datetime operations in the app will use this timezone.
-            </Typography>
+                {isLoading ? 'Saving...' : 'Save Network Settings'}
+              </Button>
+            </Box>
 
+            <Divider sx={{ my: 3 }} />
 
-            <Button
-              variant="contained"
-              onClick={saveAllApiSettings}
-              disabled={isLoading}
-              startIcon={<Save />}
-              sx={{ mt: 2 }}
-            >
-              {isLoading ? 'Saving...' : 'Save API Settings'}
-            </Button>
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Currency Settings</Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Configure the global currency name used throughout the application. This affects all currency displays in widgets.
+              </Alert>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label="Currency Name (Singular)"
+                    value={currencyName}
+                    onChange={(e) => setCurrencyName(e.target.value)}
+                    helperText="e.g., Clam, Coin, Point"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label="Currency Name (Plural)"
+                    value={currencyNamePlural}
+                    onChange={(e) => setCurrencyNamePlural(e.target.value)}
+                    helperText="e.g., Clams, Coins, Points"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label="Currency Emoji"
+                    value={currencyEmoji}
+                    onChange={(e) => setCurrencyEmoji(e.target.value)}
+                    helperText="Emoji to display with currency"
+                    inputProps={{ maxLength: 2 }}
+                  />
+                </Grid>
+              </Grid>
+              <Button
+                variant="contained"
+                onClick={saveCurrencySettings}
+                disabled={isLoading || !currencyName || !currencyNamePlural}
+                startIcon={<Save />}
+                sx={{ mt: 2 }}
+              >
+                {isLoading ? 'Saving...' : 'Save Currency Settings'}
+              </Button>
+            </Box>
           </CardContent>
         </Card>
       )}
 
       {/* Widgets Tab */}
-      {activeTab === 1 && (
+      {activeTab === 4 && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Widget Settings</Typography>
@@ -2063,7 +2837,12 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             {/* Core Widgets */}
             {Object.entries(widgetSettings).filter(([key]) => 
               ['chores', 'calendar', 'photos', 'todos', 'notes', 'alarms', 'houseRules', 'marbles', 'groceryList', 'mealPlanner', 'mealSuggestionBox'].includes(key)
-            ).map(([widget, config]) => (
+            ).sort(([keyA], [keyB]) => {
+              // Get display names for sorting
+              const nameA = widgetTabMap[keyA] || keyA;
+              const nameB = widgetTabMap[keyB] || keyB;
+              return nameA.localeCompare(nameB);
+            }).map(([widget, config]) => (
               <Box key={widget} sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
                 <Typography variant="subtitle1" sx={{ mb: 2, textTransform: 'capitalize', fontWeight: 'bold' }}>
                   {widget === 'groceryList' ? '🛒 Grocery List' : 
@@ -2090,7 +2869,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                           onChange={() => handleWidgetToggle(widget, 'transparent')}
                         />
                       }
-                      label="Transparent Background"
+                      label="Raised / Flat Card"
                       sx={{ ml: 2 }}
                     />
                   </Grid>
@@ -2253,115 +3032,324 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         </Card>
       )}
 
-      {/* Calendars Tab */}
-      {activeTab === 2 && (
+      {/* Calendar Widget Tab */}
+      {isWidgetTab('calendar') && (
         <Card>
           <CardContent sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" gutterBottom>CalDAV Calendar Management</Typography>
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={handleAddCalendar}
-              >
-                Add Calendar
-              </Button>
-            </Box>
+            <Typography variant="h6" gutterBottom>Calendar Widget</Typography>
+            
+            <Tabs value={calendarSubTab} onChange={(e, newValue) => setCalendarSubTab(newValue)} sx={{ mb: 3 }}>
+              <Tab label="Settings" />
+              <Tab label="Interface" />
+            </Tabs>
 
-            {saveMessage.show && (
-              <Alert severity={saveMessage.type} sx={{ mb: 2 }}>
-                {saveMessage.text}
-              </Alert>
-            )}
-
-            {calendarSources.length === 0 ? (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No calendars configured. Add your first CalDAV calendar to get started.
-              </Alert>
-            ) : (
-              <List>
-                {calendarSources.map((calendar) => (
-                  <ListItem
-                    key={calendar.id}
-                    sx={{
-                      border: '1px solid var(--card-border)',
-                      borderRadius: 'var(--border-radius-small)',
-                      mb: 1,
-                      backgroundColor: calendar.id === defaultCalendarId ? 'rgba(var(--primary-rgb, 158, 127, 255), 0.1)' : 'transparent'
-                    }}
+            {/* Settings Subtab */}
+            {calendarSubTab === 0 && (
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>CalDAV Calendar Management</Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={handleAddCalendar}
                   >
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                            {calendar.name}
-                          </Typography>
-                          {calendar.id === defaultCalendarId && (
-                            <Chip
-                              label="Default"
+                    Add Calendar
+                  </Button>
+                </Box>
+
+                {saveMessage.show && (
+                  <Alert severity={saveMessage.type} sx={{ mb: 2 }}>
+                    {saveMessage.text}
+                  </Alert>
+                )}
+
+                {calendarSources.length === 0 ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    No calendars configured. Add your first CalDAV calendar to get started.
+                  </Alert>
+                ) : (
+                  <List>
+                    {calendarSources.map((calendar) => (
+                      <ListItem
+                        key={calendar.id}
+                        sx={{
+                          border: '1px solid var(--card-border)',
+                          borderRadius: 'var(--border-radius-small)',
+                          mb: 1,
+                          backgroundColor: calendar.id === defaultCalendarId ? 'rgba(var(--primary-rgb, 158, 127, 255), 0.1)' : 'transparent'
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                                {calendar.name}
+                              </Typography>
+                              {calendar.id === defaultCalendarId && (
+                                <Chip
+                                  label="Default"
+                                  size="small"
+                                  color="primary"
+                                  sx={{ height: 20, fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </Box>
+                          }
+                          secondary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                              <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                                {calendar.url}
+                              </Typography>
+                              <Switch
+                                edge="end"
+                                size="small"
+                                checked={calendar.enabled === 1}
+                                onChange={() => handleToggleCalendar(calendar.id, calendar.enabled)}
+                                disabled={calendar.id === defaultCalendarId && calendar.enabled === 1}
+                              />
+                              <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                                {calendar.enabled === 1 ? 'Enabled' : 'Disabled'}
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                        <ListItemSecondaryAction>
+                          {calendar.id !== defaultCalendarId && (
+                            <Button
                               size="small"
-                              color="primary"
-                              sx={{ height: 20, fontSize: '0.7rem' }}
-                            />
+                              variant="outlined"
+                              onClick={() => handleSetDefaultCalendar(calendar.id)}
+                              sx={{ mr: 1 }}
+                            >
+                              Set as Default
+                            </Button>
                           )}
-                        </Box>
-                      }
-                      secondary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                          <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                            {calendar.url}
-                          </Typography>
-                          <Switch
+                          <IconButton
                             edge="end"
                             size="small"
-                            checked={calendar.enabled === 1}
-                            onChange={() => handleToggleCalendar(calendar.id, calendar.enabled)}
-                            disabled={calendar.id === defaultCalendarId && calendar.enabled === 1}
-                          />
-                          <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                            {calendar.enabled === 1 ? 'Enabled' : 'Disabled'}
-                          </Typography>
-                        </Box>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      {calendar.id !== defaultCalendarId && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => handleSetDefaultCalendar(calendar.id)}
-                          sx={{ mr: 1 }}
-                        >
-                          Set as Default
-                        </Button>
-                      )}
-                      <IconButton
-                        edge="end"
-                        size="small"
-                        onClick={() => handleEditCalendar(calendar)}
-                        sx={{ mr: 1 }}
-                      >
-                        <Edit />
-                      </IconButton>
-                      <IconButton
-                        edge="end"
-                        size="small"
-                        onClick={() => handleDeleteCalendar(calendar.id)}
-                        color="error"
-                        disabled={calendar.id === defaultCalendarId}
-                      >
-                        <Delete />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-              </List>
+                            onClick={() => handleEditCalendar(calendar)}
+                            sx={{ mr: 1 }}
+                          >
+                            <Edit />
+                          </IconButton>
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => handleDeleteCalendar(calendar.id)}
+                            color="error"
+                            disabled={calendar.id === defaultCalendarId}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+
+                {calendarSources.length > 0 && !defaultCalendarId && (
+                  <Alert severity="warning" sx={{ mt: 2 }}>
+                    No default calendar set. Please set a default calendar to use todos and notes features.
+                  </Alert>
+                )}
+              </Box>
             )}
 
-            {calendarSources.length > 0 && !defaultCalendarId && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                No default calendar set. Please set a default calendar to use todos and notes features.
-              </Alert>
+            {/* Interface Subtab */}
+            {calendarSubTab === 1 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Interface Settings</Typography>
+                
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" sx={{ mb: 2 }}>Event Colors</Typography>
+                    
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Background Color</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                        <Box
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: calendarSettings.eventBackgroundColor,
+                            border: '1px solid var(--card-border)',
+                            borderRadius: 'var(--border-radius-small)',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setShowColorPicker(prev => ({ ...prev, calendarBg: !prev.calendarBg }))}
+                        />
+                        <TextField
+                          size="small"
+                          value={calendarSettings.eventBackgroundColor}
+                          onChange={(e) => {
+                            setCalendarSettings({ ...calendarSettings, eventBackgroundColor: e.target.value });
+                            saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', e.target.value);
+                          }}
+                          sx={{ flex: 1 }}
+                        />
+                      </Box>
+                      {showColorPicker.calendarBg && (
+                        <Box sx={{ mb: 2 }}>
+                          <ChromePicker
+                            color={calendarSettings.eventBackgroundColor}
+                            onChange={(color) => {
+                              setCalendarSettings({ ...calendarSettings, eventBackgroundColor: color.hex });
+                              saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', color.hex);
+                            }}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Text Color</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                        <Box
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            backgroundColor: calendarSettings.eventTextColor,
+                            border: '1px solid var(--card-border)',
+                            borderRadius: 'var(--border-radius-small)',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setShowColorPicker(prev => ({ ...prev, calendarText: !prev.calendarText }))}
+                        />
+                        <TextField
+                          size="small"
+                          value={calendarSettings.eventTextColor}
+                          onChange={(e) => {
+                            setCalendarSettings({ ...calendarSettings, eventTextColor: e.target.value });
+                            saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', e.target.value);
+                          }}
+                          sx={{ flex: 1 }}
+                        />
+                      </Box>
+                      {showColorPicker.calendarText && (
+                        <Box sx={{ mb: 2 }}>
+                          <ChromePicker
+                            color={calendarSettings.eventTextColor}
+                            onChange={(color) => {
+                              setCalendarSettings({ ...calendarSettings, eventTextColor: color.hex });
+                              saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', color.hex);
+                            }}
+                          />
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Button
+                      variant="outlined"
+                      fullWidth
+                      onClick={() => {
+                        setCalendarSettings({
+                          eventBackgroundColor: '#6e44ff',
+                          eventTextColor: '#ffffff',
+                          textSize: calendarSettings.textSize,
+                          bulletSize: calendarSettings.bulletSize
+                        });
+                        saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', '#6e44ff');
+                        saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', '#ffffff');
+                        setShowColorPicker({ calendarBg: false, calendarText: false });
+                      }}
+                    >
+                      Reset to Default
+                    </Button>
+                  </Grid>
+
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" sx={{ mb: 2 }}>Display Settings</Typography>
+                    
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Text Size</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newSize = Math.max(8, calendarSettings.textSize - 1);
+                            setCalendarSettings({ ...calendarSettings, textSize: newSize });
+                            saveCalendarSetting('CALENDAR_TEXT_SIZE', newSize);
+                          }}
+                          disabled={calendarSettings.textSize <= 8}
+                        >
+                          <Remove />
+                        </IconButton>
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={calendarSettings.textSize}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 12;
+                            const clamped = Math.max(8, Math.min(24, value));
+                            setCalendarSettings({ ...calendarSettings, textSize: clamped });
+                            saveCalendarSetting('CALENDAR_TEXT_SIZE', clamped);
+                          }}
+                          inputProps={{ min: 8, max: 24 }}
+                          sx={{ width: 80 }}
+                        />
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newSize = Math.min(24, calendarSettings.textSize + 1);
+                            setCalendarSettings({ ...calendarSettings, textSize: newSize });
+                            saveCalendarSetting('CALENDAR_TEXT_SIZE', newSize);
+                          }}
+                          disabled={calendarSettings.textSize >= 24}
+                        >
+                          <Add />
+                        </IconButton>
+                        <Typography variant="body2" sx={{ ml: 1 }}>
+                          {calendarSettings.textSize}px
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Bullet Size</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newSize = Math.max(4, calendarSettings.bulletSize - 1);
+                            setCalendarSettings({ ...calendarSettings, bulletSize: newSize });
+                            saveCalendarSetting('CALENDAR_BULLET_SIZE', newSize);
+                          }}
+                          disabled={calendarSettings.bulletSize <= 4}
+                        >
+                          <Remove />
+                        </IconButton>
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={calendarSettings.bulletSize}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 10;
+                            const clamped = Math.max(4, Math.min(20, value));
+                            setCalendarSettings({ ...calendarSettings, bulletSize: clamped });
+                            saveCalendarSetting('CALENDAR_BULLET_SIZE', clamped);
+                          }}
+                          inputProps={{ min: 4, max: 20 }}
+                          sx={{ width: 80 }}
+                        />
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newSize = Math.min(20, calendarSettings.bulletSize + 1);
+                            setCalendarSettings({ ...calendarSettings, bulletSize: newSize });
+                            saveCalendarSetting('CALENDAR_BULLET_SIZE', newSize);
+                          }}
+                          disabled={calendarSettings.bulletSize >= 20}
+                        >
+                          <Add />
+                        </IconButton>
+                        <Typography variant="body2" sx={{ ml: 1 }}>
+                          {calendarSettings.bulletSize}px
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
             )}
           </CardContent>
         </Card>
@@ -2469,14 +3457,22 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         </DialogActions>
       </Dialog>
 
-      {/* Photos Tab */}
-      {activeTab === 3 && isAuthenticated && (
+      {/* Photos Widget Tab */}
+      {isWidgetTab('photos') && isAuthenticated && (
         <Card>
           <CardContent sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Photo Management</Typography>
+            <Typography variant="h6" gutterBottom>Photos Widget</Typography>
+            
+            <Tabs value={photosSubTab} onChange={(e, newValue) => setPhotosSubTab(newValue)} sx={{ mb: 3 }}>
+              <Tab label="Settings" />
+              <Tab label="Interface" />
+            </Tabs>
 
-            {/* Photo Sources Section */}
-            <Box sx={{ mb: 4 }}>
+            {/* Settings Subtab */}
+            {photosSubTab === 0 && (
+              <Box>
+                {/* Photo Sources Section */}
+                <Box sx={{ mb: 4 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="subtitle1">Photo Sources</Typography>
                 <Button
@@ -2536,7 +3532,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                             await fetchPhotoSources();
                           } catch (error) {
                             console.error('Error toggling photo source:', error);
-                            alert('Failed to toggle source. Please try again.');
+                            setSaveMessage({ show: true, type: 'error', text: 'Failed to toggle source. Please try again.' });
+                            setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
                           }
                         }}
                         sx={{ mr: 1 }}
@@ -2563,15 +3560,24 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                       <IconButton
                         edge="end"
                         onClick={async () => {
-                          if (window.confirm('Are you sure you want to delete this photo source?')) {
-                            try {
-                              await axios.delete(`${getApiUrl()}/api/photo-sources/${source.id}`);
-                              await fetchPhotoSources();
-                            } catch (error) {
-                              console.error('Error deleting photo source:', error);
-                              alert('Failed to delete source. Please try again.');
+                          setConfirmationDialog({
+                            open: true,
+                            title: 'Delete Photo Source',
+                            message: 'Are you sure you want to delete this photo source?',
+                            severity: 'warning',
+                            onConfirm: async () => {
+                              try {
+                                await axios.delete(`${getApiUrl()}/api/photo-sources/${source.id}`);
+                                await fetchPhotoSources();
+                                setSaveMessage({ show: true, type: 'success', text: 'Photo source deleted successfully!' });
+                                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                              } catch (error) {
+                                console.error('Error deleting photo source:', error);
+                                setSaveMessage({ show: true, type: 'error', text: 'Failed to delete source. Please try again.' });
+                                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+                              }
                             }
-                          }
+                          });
                         }}
                       >
                         <Delete />
@@ -2586,19 +3592,107 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                   No photo sources configured. Click "Add Source" to create one.
                 </Typography>
               )}
-            </Box>
+                </Box>
+              </Box>
+            )}
 
+            {/* Interface Subtab */}
+            {photosSubTab === 1 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Interface Settings</Typography>
+                
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Max Photos Per View</InputLabel>
+                  <Select
+                    value={photoWidgetSettings.maxPhotosPerView}
+                    label="Max Photos Per View"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPhotoWidgetSettings({ ...photoWidgetSettings, maxPhotosPerView: value });
+                      savePhotoWidgetSetting('PHOTO_WIDGET_MAX_PHOTOS_PER_VIEW', value);
+                    }}
+                  >
+                    <MenuItem value={1}>1 Photo</MenuItem>
+                    <MenuItem value={2}>2 Photos</MenuItem>
+                    <MenuItem value={3}>3 Photos</MenuItem>
+                    <MenuItem value={4}>4 Photos</MenuItem>
+                    <MenuItem value={5}>5 Photos</MenuItem>
+                  </Select>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    Shows up to this many photos with matching orientation
+                  </Typography>
+                </FormControl>
+
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Transition Effect</InputLabel>
+                  <Select
+                    value={photoWidgetSettings.transitionType}
+                    label="Transition Effect"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPhotoWidgetSettings({ ...photoWidgetSettings, transitionType: value });
+                      savePhotoWidgetSetting('PHOTO_WIDGET_TRANSITION_TYPE', value);
+                    }}
+                  >
+                    <MenuItem value="none">None</MenuItem>
+                    <MenuItem value="fade">Fade</MenuItem>
+                    <MenuItem value="slide">Slide</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Slideshow Speed</InputLabel>
+                  <Select
+                    value={photoWidgetSettings.slideshowInterval}
+                    label="Slideshow Speed"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPhotoWidgetSettings({ ...photoWidgetSettings, slideshowInterval: value });
+                      savePhotoWidgetSetting('PHOTO_WIDGET_SLIDESHOW_INTERVAL', value);
+                    }}
+                  >
+                    <MenuItem value={3000}>Fast (3s)</MenuItem>
+                    <MenuItem value={5000}>Normal (5s)</MenuItem>
+                    <MenuItem value={10000}>Slow (10s)</MenuItem>
+                    <MenuItem value={30000}>Very Slow (30s)</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={photoWidgetSettings.showPhotoCount}
+                      onChange={(e) => {
+                        const value = e.target.checked;
+                        setPhotoWidgetSettings({ ...photoWidgetSettings, showPhotoCount: value });
+                        savePhotoWidgetSetting('PHOTO_WIDGET_SHOW_PHOTO_COUNT', value);
+                      }}
+                    />
+                  }
+                  label="Show Photo Count"
+                  sx={{ mb: 2 }}
+                />
+              </Box>
+            )}
           </CardContent>
         </Card>
       )}
 
       {/* Interface Tab */}
-      {activeTab === 4 && (
+      {activeTab === 1 && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Typography variant="h6">Theme Customization</Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<Palette />}
+                  onClick={handleOpenDesigner}
+                  size="small"
+                >
+                  Designer
+                </Button>
                 <Button
                   variant="outlined"
                   startIcon={<CloudDownload />}
@@ -2656,10 +3750,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               <Tab label="📏 Spacing" />
               <Tab label="🔲 Borders" />
               <Tab label="🌑 Shadows" />
-              <Tab label="📅 Calendar" />
               <Tab label="🖼️ Media" />
-              <Tab label="📷 Photos" />
-              <Tab label="🌤️ Weather" />
+              <Tab label="Designer" />
             </Tabs>
 
             {/* Presets Tab */}
@@ -2667,68 +3759,195 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               <Box>
                 <Typography variant="h6" sx={{ mb: 3 }}>Theme Presets</Typography>
                 <Alert severity="info" sx={{ mb: 3 }}>
-                  Apply a pre-built theme or save your current settings as a custom preset.
+                  Select independent presets for light and dark modes. Each mode can use a different preset.
                 </Alert>
 
+                <Grid container spacing={3} sx={{ mb: 4 }}>
+                  {/* Light Mode Preset Selector */}
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Light Mode Preset</Typography>
+                    <FormControl fullWidth>
+                      <InputLabel>Select Light Mode Preset</InputLabel>
+                      <Select
+                        value={lightPreset || ''}
+                        onChange={(e) => {
+                          const presetKey = e.target.value;
+                          setLightPreset(presetKey);
+                          applyPreset(presetKey, 'light');
+                        }}
+                        label="Select Light Mode Preset"
+                      >
+                        {Object.entries(allThemes).map(([key, preset]) => (
+                          <MenuItem key={key} value={key}>
+                            {preset.name}{preset.isCustom ? ' (Custom)' : ''}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    {lightPreset && allThemes[lightPreset] && (
+                      <Box sx={{ mt: 2, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
+                        <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>Light Mode Colors:</Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[lightPreset].settings.colors.light.primary, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[lightPreset].settings.colors.light.secondary, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[lightPreset].settings.colors.light.accent, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                        </Box>
+                      </Box>
+                    )}
+                  </Grid>
+
+                  {/* Dark Mode Preset Selector */}
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Dark Mode Preset</Typography>
+                    <FormControl fullWidth>
+                      <InputLabel>Select Dark Mode Preset</InputLabel>
+                      <Select
+                        value={darkPreset || ''}
+                        onChange={(e) => {
+                          const presetKey = e.target.value;
+                          setDarkPreset(presetKey);
+                          applyPreset(presetKey, 'dark');
+                        }}
+                        label="Select Dark Mode Preset"
+                      >
+                        {Object.entries(allThemes).map(([key, preset]) => (
+                          <MenuItem key={key} value={key}>
+                            {preset.name}{preset.isCustom ? ' (Custom)' : ''}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    {darkPreset && allThemes[darkPreset] && (
+                      <Box sx={{ mt: 2, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
+                        <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>Dark Mode Colors:</Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[darkPreset].settings.colors.dark.primary, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[darkPreset].settings.colors.dark.secondary, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                          <Box sx={{ width: 30, height: 30, backgroundColor: allThemes[darkPreset].settings.colors.dark.accent, borderRadius: 1, border: '1px solid var(--card-border)' }} />
+                        </Box>
+                      </Box>
+                    )}
+                  </Grid>
+                </Grid>
+
+                <Divider sx={{ my: 3 }} />
+
+                <Typography variant="h6" sx={{ mb: 2 }}>All Available Presets</Typography>
                 <Grid container spacing={2}>
-                  {Object.entries(themePresets).map(([key, preset]) => (
+                  {Object.entries(allThemes).map(([key, preset]) => (
                     <Grid item xs={12} sm={6} md={4} key={key}>
-                      <Card 
-                        sx={{ 
-                          cursor: 'pointer',
+                      <Card
+                        sx={{
                           border: '2px solid',
-                          borderColor: 'transparent',
+                          borderColor:
+                            lightPreset === key || darkPreset === key
+                              ? 'var(--accent)'
+                              : 'transparent',
                           '&:hover': {
                             borderColor: 'var(--accent)',
                             transform: 'translateY(-2px)',
                             transition: 'all 0.2s'
                           }
                         }}
-                        onClick={() => applyPreset(key)}
                       >
                         <CardContent>
-                          <Typography variant="h6" sx={{ mb: 1 }}>{preset.name}</Typography>
+                          <Typography variant="h6" sx={{ mb: 1 }}>
+                            {preset.name}
+                            {preset.isCustom && (
+                              <Chip
+                                label="Custom"
+                                size="small"
+                                color="primary"
+                                sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                              />
+                            )}
+                          </Typography>
                           <Box sx={{ display: 'flex', gap: 0.5, mb: 2 }}>
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.light.primary, borderRadius: 1 }} />
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.light.secondary, borderRadius: 1 }} />
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.light.accent, borderRadius: 1 }} />
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.dark.primary, borderRadius: 1 }} />
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.dark.secondary, borderRadius: 1 }} />
-                            <Box sx={{ width: 30, height: 30, backgroundColor: preset.settings.colors.dark.accent, borderRadius: 1 }} />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.light.primary,
+                                borderRadius: 1
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.light.secondary,
+                                borderRadius: 1
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.light.accent,
+                                borderRadius: 1
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.dark.primary,
+                                borderRadius: 1
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.dark.secondary,
+                                borderRadius: 1
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                backgroundColor: preset.settings.colors.dark.accent,
+                                borderRadius: 1
+                              }}
+                            />
                           </Box>
-                          <Button 
-                            variant="outlined" 
-                            fullWidth 
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              applyPreset(key);
-                            }}
-                          >
-                            Apply
-                          </Button>
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => applyPreset(key, 'light')}
+                              sx={{ flex: 1, minWidth: 0 }}
+                            >
+                              Apply to Light
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => applyPreset(key, 'dark')}
+                              sx={{ flex: 1, minWidth: 0 }}
+                            >
+                              Apply to Dark
+                            </Button>
+                            {preset.isCustom && (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                onClick={() => handleDeletePreset(key)}
+                                disabled={deletingPresetId === key}
+                                sx={{ minWidth: 0 }}
+                              >
+                                Delete
+                              </Button>
+                            )}
+                          </Box>
                         </CardContent>
                       </Card>
                     </Grid>
                   ))}
                 </Grid>
 
-                <Divider sx={{ my: 4 }} />
-
-                <Box sx={{ mt: 4 }}>
-                  <Typography variant="h6" sx={{ mb: 2 }}>Save Current Theme as Preset</Typography>
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    Save your current theme settings as a custom preset that you can apply later.
-                  </Alert>
-                  <Button
-                    variant="contained"
-                    onClick={saveThemeSettingsHandler}
-                    startIcon={<Save />}
-                    size="large"
-                  >
-                    Save Current Theme
-                  </Button>
-                </Box>
               </Box>
             )}
 
@@ -2741,22 +3960,22 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                     <Button
                       size="small"
                       variant={previewTheme === 'light' ? 'contained' : 'outlined'}
-                  onClick={() => {
-                    setPreviewTheme('light');
-                    // Preview only - don't change actual theme
-                    applyThemeSettings(themeSettings, 'light', true);
-                  }}
+                      onClick={() => {
+                        setPreviewTheme('light');
+                        // Preview only - don't change actual theme
+                        applyThemeSettings(themeSettings, 'light', true);
+                      }}
                     >
                       Light
                     </Button>
                     <Button
                       size="small"
                       variant={previewTheme === 'dark' ? 'contained' : 'outlined'}
-                  onClick={() => {
-                    setPreviewTheme('dark');
-                    // Preview only - don't change actual theme
-                    applyThemeSettings(themeSettings, 'dark', true);
-                  }}
+                      onClick={() => {
+                        setPreviewTheme('dark');
+                        // Preview only - don't change actual theme
+                        applyThemeSettings(themeSettings, 'dark', true);
+                      }}
                     >
                       Dark
                     </Button>
@@ -2818,32 +4037,237 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                   </Box>
                 </Box>
 
-                <Grid container spacing={3}>
-                  {/* Light/Dark Theme Colors */}
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-                      Base Colors
-                    </Typography>
-                    {renderThemeColorPicker(previewTheme, 'background', 'Background')}
-                    {renderThemeColorPicker(previewTheme, 'surface', 'Surface')}
-                    {renderThemeColorPicker(previewTheme, 'cardBg', 'Card Background')}
-                    {renderThemeColorPicker(previewTheme, 'text', 'Text (Primary)')}
-                    {renderThemeColorPicker(previewTheme, 'textSecondary', 'Text (Secondary)')}
-                    {renderThemeColorPicker(previewTheme, 'border', 'Border')}
-                    {renderThemeColorPicker(previewTheme, 'cardBorder', 'Card Border')}
-                  </Grid>
+               <Box
+                 sx={{
+                   mt: 3,
+                   display: 'flex',
+                   flexDirection: { xs: 'column', md: 'row' },
+                   alignItems: 'stretch',
+                   gap: 3,
+                 }}
+               >
+                 {/* Left side: Base + Accent & Status Colors */}
+                 <Box sx={{ flexBasis: { md: '55%', xs: '100%' } }}>
+                   <Grid container spacing={3}>
+                     {/* Base Colors */}
+                     <Grid item xs={12} md={6}>
+                       <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                         Base Colors
+                       </Typography>
+                       {renderThemeColorPicker(previewTheme, 'background', 'Background')}
+                       {renderThemeColorPicker(previewTheme, 'surface', 'Surface')}
+                       {renderThemeColorPicker(previewTheme, 'cardBg', 'Card Background')}
+                       {renderThemeColorPicker(previewTheme, 'text', 'Text (Primary)')}
+                       {renderThemeColorPicker(previewTheme, 'textSecondary', 'Text (Secondary)')}
+                       {renderThemeColorPicker(previewTheme, 'border', 'Border')}
+                       {renderThemeColorPicker(previewTheme, 'cardBorder', 'Card Border')}
+                     </Grid>
 
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-                      Accent & Status Colors
-                    </Typography>
-                    {renderThemeColorPicker(previewTheme, 'primary', 'Primary')}
-                    {renderThemeColorPicker(previewTheme, 'secondary', 'Secondary')}
-                    {renderThemeColorPicker(previewTheme, 'accent', 'Accent')}
-                    {renderThemeColorPicker(previewTheme, 'success', 'Success')}
-                    {renderThemeColorPicker(previewTheme, 'warning', 'Warning')}
-                    {renderThemeColorPicker(previewTheme, 'error', 'Error')}
-                  </Grid>
+                     {/* Accent & Status Colors */}
+                     <Grid item xs={12} md={6}>
+                       <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                         Accent & Status Colors
+                       </Typography>
+                       {renderThemeColorPicker(previewTheme, 'primary', 'Primary')}
+                       {renderThemeColorPicker(previewTheme, 'secondary', 'Secondary')}
+                       {renderThemeColorPicker(previewTheme, 'accent', 'Accent')}
+                       {renderThemeColorPicker(previewTheme, 'success', 'Success')}
+                       {renderThemeColorPicker(previewTheme, 'warning', 'Warning')}
+                       {renderThemeColorPicker(previewTheme, 'error', 'Error')}
+                     </Grid>
+                   </Grid>
+                 </Box>
+
+                 {/* Right side: Palette Controls (ported from Designer, without Toggle Mode) */}
+                 <Box
+                   sx={{
+                     flexGrow: 1,
+                     minHeight: 360,
+                     display: 'flex',
+                     alignItems: 'center',
+                     justifyContent: 'center',
+                     px: { xs: 0, md: 3 },
+                   }}
+                 >
+                    <Card
+                      sx={{
+                        p: 3,
+                        width: '100%',
+                        maxWidth: 560,
+                      }}
+                    >
+                      <CardContent>
+                        <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+                          Palette Controls
+                        </Typography>
+
+                        <TextField
+                          fullWidth
+                          label="Custom Theme Name"
+                          placeholder="e.g. Midnight Forest"
+                          value={paletteName}
+                          onChange={(e) => setPaletteName(e.target.value)}
+                          sx={{ mb: 2 }}
+                        />
+
+                        <FormControl fullWidth sx={{ mb: 2 }}>
+                          <InputLabel>Generator Mode</InputLabel>
+                          <Select
+                            value={paletteGeneratorMode}
+                            label="Generator Mode"
+                            onChange={(e) => setPaletteGeneratorMode(e.target.value)}
+                          >
+                            <MenuItem value="monochromatic">Monochromatic</MenuItem>
+                            <MenuItem value="analogous">Analogous</MenuItem>
+                            <MenuItem value="complementary">Complementary</MenuItem>
+                            <MenuItem value="triadic">Triadic</MenuItem>
+                          </Select>
+                        </FormControl>
+
+                        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                          <Button
+                            variant="contained"
+                            onClick={async () => {
+                          try {
+                            setPaletteSaving(true);
+                            setPaletteMessage('');
+                            const apiUrl = getApiUrl();
+                            const response = await axios.get(
+                              `${apiUrl}/api/palette/random`,
+                              {
+                                params: { mode: paletteGeneratorMode }
+                              }
+                            );
+                            const palette = response.data;
+                            if (
+                              !palette ||
+                              !palette.settings ||
+                              !palette.settings.colors
+                            ) {
+                              throw new Error(
+                                'Invalid palette data received from server'
+                              );
+                            }
+
+                            const newSettings = {
+                              ...themeSettings,
+                              colors: palette.settings.colors
+                            };
+                            setThemeSettings(newSettings);
+                            saveThemeSettings(newSettings);
+
+                            const currentTheme =
+                              document.documentElement.getAttribute(
+                                'data-theme'
+                              ) || 'light';
+                            applyThemeSettings(
+                              newSettings,
+                              currentTheme,
+                              false
+                            );
+
+                            setPaletteMessage(
+                              `Generated ${paletteGeneratorMode} palette successfully.`
+                            );
+                          } catch (error) {
+                            console.error(
+                              '[AdminPanel] Error generating palette:',
+                              error
+                            );
+                            setPaletteMessage(
+                              'Failed to generate palette. Please check server logs.'
+                            );
+                          } finally {
+                            setPaletteSaving(false);
+                          }
+                        }}
+                        disabled={paletteSaving}
+                        fullWidth
+                      >
+                        {paletteSaving ? 'Generating…' : 'Generate Palette'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        onClick={async () => {
+                          try {
+                            setPaletteSaving(true);
+                            setPaletteMessage('');
+
+                            const baseName = (paletteName || '').trim();
+                            const generatedName = `Palette export ${new Date().toLocaleTimeString()}`;
+
+                            const palette = {
+                              id: `palette-${Date.now()}`,
+                              name: baseName || generatedName,
+                              settings: {
+                                colors:
+                                  themeSettings.colors ||
+                                  defaultThemeSettings.colors
+                              }
+                            };
+
+                            const apiUrl = getApiUrl();
+                            const res = await axios.post(
+                              `${apiUrl}/api/palette/save`,
+                              palette
+                            );
+                            if (!res.data || !res.data.success) {
+                              throw new Error(
+                                res.data?.error ||
+                                  'Server did not confirm palette save'
+                              );
+                            }
+
+                            // Refresh custom themes so the new preset appears under Presets
+                            try {
+                              const updatedThemes = await getAllThemes();
+                              setAllThemes(updatedThemes);
+                            } catch (refreshError) {
+                              console.error(
+                                '[AdminPanel] Failed to refresh themes after palette export:',
+                                refreshError
+                              );
+                            }
+
+                            setPaletteMessage(
+                              `Palette "${palette.name}" exported and saved to server/themes/colors.`
+                            );
+                            setPaletteName('');
+                          } catch (error) {
+                            console.error(
+                              '[AdminPanel] Error exporting palette:',
+                              error
+                            );
+                            setPaletteMessage(
+                              'Failed to export palette. Please check server logs.'
+                            );
+                          } finally {
+                            setPaletteSaving(false);
+                          }
+                        }}
+                        disabled={paletteSaving}
+                        fullWidth
+                      >
+                        {paletteSaving ? 'Exporting…' : 'Export Palette'}
+                      </Button>
+                    </Box>
+
+                        {paletteMessage && (
+                          <Alert
+                            severity={
+                              paletteMessage.toLowerCase().startsWith('failed')
+                                ? 'error'
+                                : 'success'
+                            }
+                            sx={{ mt: 1 }}
+                          >
+                            {paletteMessage}
+                          </Alert>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Box>
+                </Box>
 
                   {/* Gradient Colors */}
                   <Grid item xs={12}>
@@ -2853,20 +4277,39 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                     </Typography>
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6} md={3}>
-                        {renderThemeColorPicker(null, 'lightGradientStart', 'Light Gradient Start', 'gradients')}
+                        {renderThemeColorPicker(
+                          null,
+                          'lightGradientStart',
+                          'Light Gradient Start',
+                          'gradients'
+                        )}
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
-                        {renderThemeColorPicker(null, 'lightGradientEnd', 'Light Gradient End', 'gradients')}
+                        {renderThemeColorPicker(
+                          null,
+                          'lightGradientEnd',
+                          'Light Gradient End',
+                          'gradients'
+                        )}
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
-                        {renderThemeColorPicker(null, 'darkGradientStart', 'Dark Gradient Start', 'gradients')}
+                        {renderThemeColorPicker(
+                          null,
+                          'darkGradientStart',
+                          'Dark Gradient Start',
+                          'gradients'
+                        )}
                       </Grid>
                       <Grid item xs={12} sm={6} md={3}>
-                        {renderThemeColorPicker(null, 'darkGradientEnd', 'Dark Gradient End', 'gradients')}
+                        {renderThemeColorPicker(
+                          null,
+                          'darkGradientEnd',
+                          'Dark Gradient End',
+                          'gradients'
+                        )}
                       </Grid>
                     </Grid>
                   </Grid>
-                </Grid>
 
                 <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
                   <Button 
@@ -2894,22 +4337,153 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               <Box>
                 <Typography variant="h6" sx={{ mb: 3 }}>Typography</Typography>
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <FormControl fullWidth sx={{ mb: 3 }}>
-                      <InputLabel>Font Family</InputLabel>
-                      <Select
-                        value={themeSettings.typography?.fontFamily || 'Inter'}
-                        onChange={(e) => handleThemeSettingChange('typography.fontFamily', e.target.value)}
-                        label="Font Family"
-                      >
-                        <MenuItem value="Inter">Inter</MenuItem>
-                        <MenuItem value="Roboto">Roboto</MenuItem>
-                        <MenuItem value="'Open Sans'">Open Sans</MenuItem>
-                        <MenuItem value="system-ui">System</MenuItem>
-                        <MenuItem value="'Courier New'">Courier New (Monospace)</MenuItem>
-                      </Select>
-                    </FormControl>
+                  <Grid item xs={12} md={4}>
+                    <Autocomplete
+                      options={allFonts}
+                      getOptionLabel={(option) => option.name || ''}
+                      value={
+                        allFonts.find(
+                          (font) =>
+                            font.fontFamily ===
+                              (themeSettings.typography?.primaryFont ||
+                                defaultThemeSettings.typography.primaryFont) ||
+                            font.id ===
+                              (themeSettings.typography?.primaryFont ||
+                                defaultThemeSettings.typography.primaryFont)
+                        ) || null
+                      }
+                      onChange={(event, newValue) => {
+                        const fontFamily =
+                          newValue?.fontFamily ||
+                          newValue?.id ||
+                          defaultThemeSettings.typography.primaryFont;
+                        handleThemeSettingChange('typography.primaryFont', fontFamily);
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Primary Font (Body Text)"
+                          placeholder="Search fonts..."
+                        />
+                      )}
+                      groupBy={(option) =>
+                        option.category
+                          ? option.category.charAt(0).toUpperCase() +
+                            option.category.slice(1)
+                          : option.isCustom
+                          ? 'Custom'
+                          : 'Other'
+                      }
+                      isOptionEqualToValue={(option, value) =>
+                        (option.id && value?.id && option.id === value.id) ||
+                        option.fontFamily === value?.fontFamily
+                      }
+                      sx={{ mb: 3 }}
+                    />
+                    <FormHelperText>
+                      Used for body text and general UI elements
+                    </FormHelperText>
+                  </Grid>
 
+                  <Grid item xs={12} md={4}>
+                    <Autocomplete
+                      options={allFonts}
+                      getOptionLabel={(option) => option.name || ''}
+                      value={
+                        allFonts.find(
+                          (font) =>
+                            font.fontFamily ===
+                              (themeSettings.typography?.secondaryFont ||
+                                defaultThemeSettings.typography.secondaryFont) ||
+                            font.id ===
+                              (themeSettings.typography?.secondaryFont ||
+                                defaultThemeSettings.typography.secondaryFont)
+                        ) || null
+                      }
+                      onChange={(event, newValue) => {
+                        const fontFamily =
+                          newValue?.fontFamily ||
+                          newValue?.id ||
+                          defaultThemeSettings.typography.secondaryFont;
+                        handleThemeSettingChange('typography.secondaryFont', fontFamily);
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Secondary Font (Headings)"
+                          placeholder="Search fonts..."
+                        />
+                      )}
+                      groupBy={(option) =>
+                        option.category
+                          ? option.category.charAt(0).toUpperCase() +
+                            option.category.slice(1)
+                          : option.isCustom
+                          ? 'Custom'
+                          : 'Other'
+                      }
+                      isOptionEqualToValue={(option, value) =>
+                        (option.id && value?.id && option.id === value.id) ||
+                        option.fontFamily === value?.fontFamily
+                      }
+                      sx={{ mb: 3 }}
+                    />
+                    <FormHelperText>
+                      Used for headings (h1-h6) and emphasis
+                    </FormHelperText>
+                  </Grid>
+
+                  <Grid item xs={12} md={4}>
+                    <Autocomplete
+                      options={allFonts}
+                      getOptionLabel={(option) => option.name || ''}
+                      value={
+                        allFonts.find(
+                          (font) =>
+                            font.fontFamily ===
+                              (themeSettings.typography?.tertiaryFont ||
+                                defaultThemeSettings.typography.tertiaryFont) ||
+                            font.id ===
+                              (themeSettings.typography?.tertiaryFont ||
+                                defaultThemeSettings.typography.tertiaryFont)
+                        ) || null
+                      }
+                      onChange={(event, newValue) => {
+                        const fontFamily =
+                          newValue?.fontFamily ||
+                          newValue?.id ||
+                          defaultThemeSettings.typography.tertiaryFont;
+                        handleThemeSettingChange('typography.tertiaryFont', fontFamily);
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Tertiary Font (Captions)"
+                          placeholder="Search fonts..."
+                        />
+                      )}
+                      groupBy={(option) =>
+                        option.category
+                          ? option.category.charAt(0).toUpperCase() +
+                            option.category.slice(1)
+                          : option.isCustom
+                          ? 'Custom'
+                          : 'Other'
+                      }
+                      isOptionEqualToValue={(option, value) =>
+                        (option.id && value?.id && option.id === value.id) ||
+                        option.fontFamily === value?.fontFamily
+                      }
+                      sx={{ mb: 3 }}
+                    />
+                    <FormHelperText>
+                      Used for captions, labels, and small text
+                    </FormHelperText>
+                  </Grid>
+                </Grid>
+
+                <Grid container spacing={3} sx={{ mt: 2 }}>
+                  <Grid item xs={12} md={6}>
                     <Typography variant="body2" sx={{ mb: 1 }}>Base Font Size: {themeSettings.typography?.baseFontSize || 16}px</Typography>
                     <Slider
                       value={themeSettings.typography?.baseFontSize || 16}
@@ -3192,205 +4766,10 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               </Box>
             )}
 
-            {/* Calendar Tab */}
-            {themeSubTab === 6 && (
-              <Box>
-                <Typography variant="h6" sx={{ mb: 3 }}>Calendar Widget Settings</Typography>
-                
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle1" sx={{ mb: 2 }}>Event Colors</Typography>
-                    
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Background Color</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                        <Box
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            backgroundColor: calendarSettings.eventBackgroundColor,
-                            border: '1px solid var(--card-border)',
-                            borderRadius: 'var(--border-radius-small)',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => setShowColorPicker(prev => ({ ...prev, calendarBg: !prev.calendarBg }))}
-                        />
-                        <TextField
-                          size="small"
-                          value={calendarSettings.eventBackgroundColor}
-                          onChange={(e) => {
-                            setCalendarSettings({ ...calendarSettings, eventBackgroundColor: e.target.value });
-                            saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', e.target.value);
-                          }}
-                          sx={{ flex: 1 }}
-                        />
-                      </Box>
-                      {showColorPicker.calendarBg && (
-                        <Box sx={{ mb: 2 }}>
-                          <ChromePicker
-                            color={calendarSettings.eventBackgroundColor}
-                            onChange={(color) => {
-                              setCalendarSettings({ ...calendarSettings, eventBackgroundColor: color.hex });
-                              saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', color.hex);
-                            }}
-                          />
-                        </Box>
-                      )}
-                    </Box>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Text Color</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                        <Box
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            backgroundColor: calendarSettings.eventTextColor,
-                            border: '1px solid var(--card-border)',
-                            borderRadius: 'var(--border-radius-small)',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => setShowColorPicker(prev => ({ ...prev, calendarText: !prev.calendarText }))}
-                        />
-                        <TextField
-                          size="small"
-                          value={calendarSettings.eventTextColor}
-                          onChange={(e) => {
-                            setCalendarSettings({ ...calendarSettings, eventTextColor: e.target.value });
-                            saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', e.target.value);
-                          }}
-                          sx={{ flex: 1 }}
-                        />
-                      </Box>
-                      {showColorPicker.calendarText && (
-                        <Box sx={{ mb: 2 }}>
-                          <ChromePicker
-                            color={calendarSettings.eventTextColor}
-                            onChange={(color) => {
-                              setCalendarSettings({ ...calendarSettings, eventTextColor: color.hex });
-                              saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', color.hex);
-                            }}
-                          />
-                        </Box>
-                      )}
-                    </Box>
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      onClick={() => {
-                        setCalendarSettings({
-                          eventBackgroundColor: '#6e44ff',
-                          eventTextColor: '#ffffff',
-                          textSize: calendarSettings.textSize,
-                          bulletSize: calendarSettings.bulletSize
-                        });
-                        saveCalendarSetting('CALENDAR_EVENT_BACKGROUND_COLOR', '#6e44ff');
-                        saveCalendarSetting('CALENDAR_EVENT_TEXT_COLOR', '#ffffff');
-                        setShowColorPicker({ calendarBg: false, calendarText: false });
-                      }}
-                    >
-                      Reset to Default
-                    </Button>
-                  </Grid>
-
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle1" sx={{ mb: 2 }}>Display Settings</Typography>
-                    
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Event Text Size</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            const newSize = Math.max(8, calendarSettings.textSize - 1);
-                            setCalendarSettings({ ...calendarSettings, textSize: newSize });
-                            saveCalendarSetting('CALENDAR_TEXT_SIZE', newSize);
-                          }}
-                          disabled={calendarSettings.textSize <= 8}
-                        >
-                          <Remove />
-                        </IconButton>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={calendarSettings.textSize}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 12;
-                            const clamped = Math.max(8, Math.min(24, value));
-                            setCalendarSettings({ ...calendarSettings, textSize: clamped });
-                            saveCalendarSetting('CALENDAR_TEXT_SIZE', clamped);
-                          }}
-                          inputProps={{ min: 8, max: 24 }}
-                          sx={{ width: 80 }}
-                        />
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            const newSize = Math.min(24, calendarSettings.textSize + 1);
-                            setCalendarSettings({ ...calendarSettings, textSize: newSize });
-                            saveCalendarSetting('CALENDAR_TEXT_SIZE', newSize);
-                          }}
-                          disabled={calendarSettings.textSize >= 24}
-                        >
-                          <Add />
-                        </IconButton>
-                        <Typography variant="body2" sx={{ ml: 1 }}>
-                          {calendarSettings.textSize}px
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>Bullet Size</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            const newSize = Math.max(6, calendarSettings.bulletSize - 1);
-                            setCalendarSettings({ ...calendarSettings, bulletSize: newSize });
-                            saveCalendarSetting('CALENDAR_BULLET_SIZE', newSize);
-                          }}
-                          disabled={calendarSettings.bulletSize <= 6}
-                        >
-                          <Remove />
-                        </IconButton>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={calendarSettings.bulletSize}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 10;
-                            const clamped = Math.max(6, Math.min(20, value));
-                            setCalendarSettings({ ...calendarSettings, bulletSize: clamped });
-                            saveCalendarSetting('CALENDAR_BULLET_SIZE', clamped);
-                          }}
-                          inputProps={{ min: 6, max: 20 }}
-                          sx={{ width: 80 }}
-                        />
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            const newSize = Math.min(20, calendarSettings.bulletSize + 1);
-                            setCalendarSettings({ ...calendarSettings, bulletSize: newSize });
-                            saveCalendarSetting('CALENDAR_BULLET_SIZE', newSize);
-                          }}
-                          disabled={calendarSettings.bulletSize >= 20}
-                        >
-                          <Add />
-                        </IconButton>
-                        <Typography variant="body2" sx={{ ml: 1 }}>
-                          {calendarSettings.bulletSize}px
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Grid>
-                </Grid>
-              </Box>
-            )}
+            {/* Calendar Tab - Moved to Calendar Widget Tab */}
 
             {/* Media Tab */}
-            {themeSubTab === 7 && (
+            {themeSubTab === 6 && (
               <Box>
                 <Typography variant="h6" sx={{ mb: 3 }}>Media Settings</Typography>
                 
@@ -3477,11 +4856,59 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 >
                   Save Orientation
                 </Button>
+
+                <FormControl fullWidth sx={{ mt: 3 }}>
+                  <InputLabel>Loading Animation</InputLabel>
+                  <Select
+                    value={widgetSettings.loadingAnimationMode || 'startup'}
+                    label="Loading Animation"
+                    onChange={(e) => {
+                      const newMode = e.target.value;
+                      const updatedSettings = {
+                        ...widgetSettings,
+                        loadingAnimationMode: newMode
+                      };
+                      setLocalWidgetSettings(updatedSettings);
+                      localStorage.setItem('widgetSettings', JSON.stringify(updatedSettings));
+                      setWidgetSettings(updatedSettings);
+                    }}
+                  >
+                    <MenuItem value="startup">Enabled (Startup Only)</MenuItem>
+                    <MenuItem value="all">Enabled (All Refreshes)</MenuItem>
+                    <MenuItem value="disabled">Disabled</MenuItem>
+                  </Select>
+                  <FormHelperText>
+                    Control when the loading animation overlay appears. "Startup Only" shows on initial page load, "All Refreshes" also shows on soft refreshes.
+                  </FormHelperText>
+                </FormControl>
               </Box>
             )}
 
-            {/* Photos Tab */}
-            {themeSubTab === 8 && (
+            {/* Designer Tab */}
+            {themeSubTab === 7 && (
+              <Box>
+                <Typography variant="h6" sx={{ mb: 2 }}>Designer Integration</Typography>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Control how the Designer button behaves when launched from the Interface tab.
+                </Alert>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={designerOpenInNewTab}
+                      onChange={handleDesignerOpenModeChange}
+                    />
+                  }
+                  label="Open Designer in new tab"
+                  sx={{ mb: 1 }}
+                />
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                  When this is off, the Designer will open in the current tab by default.
+                </Typography>
+              </Box>
+            )}
+
+            {/* Photos Tab - Moved to Photos Widget Tab */}
+            {false && (
               <Box>
                 <Typography variant="h6" sx={{ mb: 3 }}>Photos Widget Settings</Typography>
 
@@ -3559,170 +4986,17 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
               </Box>
             )}
 
-            {/* Weather Tab */}
-            {themeSubTab === 9 && (
-              <Box>
-                <Typography variant="h6" sx={{ mb: 3 }}>Weather Widget Settings</Typography>
-
-                <Typography variant="h6" sx={{ mb: 2, mt: 3 }}>Weather Location</Typography>
-                <TextField
-                  fullWidth
-                  label="Zip Code"
-                  value={settings.WEATHER_ZIP_CODE || '14818'}
-                  onChange={(e) => setSettings(prev => ({ ...prev, WEATHER_ZIP_CODE: e.target.value }))}
-                  sx={{ mb: 2 }}
-                  helperText="US zip code for weather data (e.g., 14818)"
-                />
-                <Button
-                  variant="contained"
-                  onClick={async () => {
-                    try {
-                      setIsLoading(true);
-                      await axios.post(`${getApiUrl()}/api/settings`, {
-                        key: 'WEATHER_ZIP_CODE',
-                        value: settings.WEATHER_ZIP_CODE || '14818'
-                      });
-                      setSaveMessage({ show: true, type: 'success', text: 'Weather zip code saved successfully!' });
-                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
-                    } catch (error) {
-                      console.error('Error saving weather zip code:', error);
-                      setSaveMessage({ show: true, type: 'error', text: 'Failed to save weather zip code.' });
-                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }}
-                  disabled={isLoading}
-                  startIcon={<Save />}
-                  sx={{
-                    backgroundColor: 'var(--primary)',
-                    color: 'var(--text)',
-                    '&:hover': {
-                      backgroundColor: 'var(--primary)',
-                      opacity: 0.9
-                    }
-                  }}
-                >
-                  {isLoading ? 'Saving...' : 'Save Zip Code'}
-                </Button>
-
-                <Divider sx={{ my: 4 }} />
-
-                <Typography variant="h6" sx={{ mb: 2 }}>Layout Mode</Typography>
-                <Box sx={{ mt: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1, bgcolor: 'rgba(var(--text-rgb), 0.02)' }}>
-                  <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ViewModule />
-                    Layout Mode
-                  </Typography>
-                  
-                  <RadioGroup
-                    value={widgetSettings.weather?.layoutMode || 'medium'}
-                    onChange={(e) => handleWeatherLayoutModeChange(e.target.value)}
-                  >
-                    <FormControlLabel
-                      value="compact"
-                      control={<Radio />}
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <ViewCompact />
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              Compact
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Current weather only (minimal space)
-                            </Typography>
-                          </Box>
-                        </Box>
-                      }
-                    />
-                    
-                    <FormControlLabel
-                      value="medium"
-                      control={<Radio />}
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <ViewModule />
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              Medium
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Current weather + 3-day forecast
-                            </Typography>
-                          </Box>
-                        </Box>
-                      }
-                    />
-                    
-                    <FormControlLabel
-                      value="full"
-                      control={<Radio />}
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <ViewQuilt />
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              Full
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              All information with charts and air quality
-                            </Typography>
-                          </Box>
-                        </Box>
-                      }
-                    />
-                  </RadioGroup>
-
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    <Typography variant="body2">
-                      <strong>Compact:</strong> Shows only current weather conditions. Best for minimal space usage.
-                      <br />
-                      <strong>Medium:</strong> Displays current weather plus a 3-day forecast. Balanced information and space.
-                      <br />
-                      <strong>Full:</strong> Complete weather information including charts, air quality, and extended forecast. Maximum detail.
-                    </Typography>
-                  </Alert>
-                </Box>
-              </Box>
-            )}
+            {/* Weather Tab - Moved to Weather Widget Tab */}
 
           </CardContent>
         </Card>
       )}
 
       {/* Users Tab */}
-      {activeTab === 5 && (
+      {activeTab === 3 && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>User Management</Typography>
-            
-            <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
-              <Typography variant="subtitle1" sx={{ mb: 2 }}>Chore Settings</Typography>
-              <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Bonus Chore Clam Value"
-                    type="number"
-                    value={bonusChoreClamValue}
-                    onChange={(e) => setBonusChoreClamValue(parseInt(e.target.value) || 1)}
-                    helperText="Default clam value for bonus chores"
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Button
-                    variant="contained"
-                    onClick={saveBonusChoreClamValue}
-                    disabled={!isAuthenticated}
-                    fullWidth
-                    sx={{ height: '56px', mt: 1 }}
-                  >
-                    Save Bonus Chore Value
-                  </Button>
-                </Grid>
-              </Grid>
-            </Box>
             
             <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
               <Typography variant="subtitle1" sx={{ mb: 2 }}>Add New User</Typography>
@@ -3765,7 +5039,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                     <TableCell>Avatar</TableCell>
                     <TableCell>Username</TableCell>
                     <TableCell>Email</TableCell>
-                    <TableCell>Clam Total</TableCell>
+                    {widgetSettings.chores?.enabled && <TableCell>{currencyNamePlural} Total</TableCell>}
                     <TableCell>Chores</TableCell>
                     <TableCell>Actions</TableCell>
                   </TableRow>
@@ -3835,27 +5109,30 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                           user.email
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Chip
-                            label={`${user.clam_total || 0} 🥟`}
-                            color="primary"
-                            size="small"
-                          />
-                          <TextField
-                            type="number"
-                            size="small"
-                            sx={{ width: 80 }}
-                            defaultValue={user.clam_total || 0}
-                            onBlur={(e) => {
-                              const newTotal = parseInt(e.target.value) || 0;
-                              if (newTotal !== user.clam_total) {
-                                updateUserClams(user.id, newTotal);
-                              }
-                            }}
-                          />
-                        </Box>
-                      </TableCell>
+                      {widgetSettings.chores?.enabled && (
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip
+                              label={`${user.currency_total || user.clam_total || 0} ${currencyEmoji}`}
+                              color="primary"
+                              size="small"
+                            />
+                            <TextField
+                              type="number"
+                              size="small"
+                              sx={{ width: 80 }}
+                              defaultValue={user.currency_total || user.clam_total || 0}
+                              onBlur={(e) => {
+                                const newTotal = parseInt(e.target.value) || 0;
+                                const currentTotal = user.currency_total || user.clam_total || 0;
+                                if (newTotal !== currentTotal) {
+                                  updateUserClams(user.id, newTotal);
+                                }
+                              }}
+                            />
+                          </Box>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}>
                           <Button
@@ -3920,8 +5197,438 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         </Card>
       )}
 
-      {/* Prizes Tab */}
-      {activeTab === 6 && (
+      {/* Chores Widget Tab */}
+      {isWidgetTab('chores') && (
+        <Card>
+          <CardContent sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>Chores Widget</Typography>
+            
+            <Tabs value={choresSubTab} onChange={(e, newValue) => setChoresSubTab(newValue)} sx={{ mb: 3 }}>
+              <Tab label="Settings" />
+              <Tab label="Users" />
+              <Tab label="Prizes" />
+              <Tab label="Interface" />
+            </Tabs>
+
+            {/* Settings Subtab */}
+            {choresSubTab === 0 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Bonus Chore Settings</Typography>
+                <Grid container spacing={2} sx={{ mb: 3 }}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Bonus Chore Currency Value"
+                      type="number"
+                      value={bonusChoreCurrencyValue}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string while typing, then parse to number
+                        if (value === '') {
+                          setBonusChoreCurrencyValue(0);
+                        } else {
+                          const parsed = parseInt(value);
+                          // Properly handle 0 as a valid value (check for NaN, not falsy)
+                          setBonusChoreCurrencyValue(isNaN(parsed) ? 1 : parsed);
+                        }
+                      }}
+                      helperText={`Default currency value for bonus chores`}
+                      InputProps={{ inputProps: { min: 0 } }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Button
+                      variant="contained"
+                      onClick={saveBonusChoreCurrencyValue}
+                      disabled={!isAuthenticated || isLoading}
+                      fullWidth
+                      sx={{ height: '56px', mt: 1 }}
+                    >
+                      Save Bonus Chore Value
+                    </Button>
+                  </Grid>
+                </Grid>
+
+                <Divider sx={{ my: 3 }} />
+
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Daily Chores Completion Bonus</Typography>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Set the default bonus currency amount awarded when a user completes all their daily chores for a given day.
+                </Alert>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Completion Bonus Amount"
+                      type="number"
+                      value={dailyChoresCompletionBonus}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string while typing, then parse to number
+                        if (value === '') {
+                          setDailyChoresCompletionBonus(0);
+                        } else {
+                          const parsed = parseInt(value);
+                          // Properly handle 0 as a valid value (check for NaN, not falsy)
+                          setDailyChoresCompletionBonus(isNaN(parsed) ? 2 : parsed);
+                        }
+                      }}
+                      helperText={`Currency bonus for completing all daily chores (set to 0 to disable)`}
+                      InputProps={{ inputProps: { min: 0 } }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Button
+                      variant="contained"
+                      onClick={saveDailyChoresCompletionBonus}
+                      disabled={!isAuthenticated || isLoading}
+                      fullWidth
+                      sx={{ height: '56px', mt: 1 }}
+                    >
+                      Save Completion Bonus
+                    </Button>
+                  </Grid>
+                </Grid>
+              </Box>
+            )}
+
+            {/* Users Subtab */}
+            {choresSubTab === 1 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>User Currency Management</Typography>
+                
+                <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>Prize Minimum Currency Requirement</Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Minimum Currency Required"
+                        type="number"
+                        value={prizeMinimumCurrency}
+                        onChange={(e) => setPrizeMinimumCurrency(parseInt(e.target.value) || 0)}
+                        helperText={`Users must have at least this many ${currencyNamePlural.toLowerCase()} to purchase prizes`}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Button
+                        variant="contained"
+                        onClick={savePrizeMinimumCurrency}
+                        disabled={!isAuthenticated}
+                        fullWidth
+                        sx={{ height: '56px', mt: 1 }}
+                      >
+                        Save Minimum Currency
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Box>
+
+                <TableContainer component={Paper}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Avatar</TableCell>
+                        <TableCell>Username</TableCell>
+                        <TableCell>Email</TableCell>
+                        <TableCell>{currencyNamePlural} Total</TableCell>
+                        <TableCell>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell>
+                            {renderUserAvatar(user)}
+                          </TableCell>
+                          <TableCell>{user.username}</TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Chip
+                                label={`${user.currency_total || user.clam_total || 0} ${currencyEmoji}`}
+                                color="primary"
+                                size="small"
+                              />
+                              <TextField
+                                type="number"
+                                size="small"
+                                sx={{ width: 80 }}
+                                defaultValue={user.currency_total || user.clam_total || 0}
+                                onBlur={(e) => {
+                                  const newTotal = parseInt(e.target.value) || 0;
+                                  const currentTotal = user.currency_total || user.clam_total || 0;
+                                  if (newTotal !== currentTotal) {
+                                    updateUserClams(user.id, newTotal);
+                                  }
+                                }}
+                              />
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <IconButton
+                              onClick={() => setEditingUser({ ...user })}
+                              color="primary"
+                              size="small"
+                            >
+                              <Edit />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            )}
+
+            {/* Prizes Subtab */}
+            {choresSubTab === 2 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Prize Management</Typography>
+                
+                <Box sx={{ mb: 3, p: 2, border: '1px solid var(--card-border)', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>Add New Prize</Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        label="Prize Name"
+                        value={newPrize.name}
+                        onChange={(e) => setNewPrize({ ...newPrize, name: e.target.value })}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={3}>
+                      <TextField
+                        fullWidth
+                        label="Emoji"
+                        value={newPrize.emoji}
+                        onChange={(e) => setNewPrize({ ...newPrize, emoji: e.target.value })}
+                        placeholder="🎁"
+                        helperText="Emoji shown on wheel"
+                        inputProps={{ maxLength: 2 }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={2}>
+                      <TextField
+                        fullWidth
+                        label={`${currencyName} Cost`}
+                        type="number"
+                        value={newPrize.currency_cost}
+                        onChange={(e) => setNewPrize({ ...newPrize, currency_cost: parseInt(e.target.value) || 0 })}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={3}>
+                      <Button
+                        variant="contained"
+                        onClick={savePrize}
+                        disabled={!newPrize.name || newPrize.currency_cost <= 0}
+                        fullWidth
+                        sx={{ height: '56px' }}
+                      >
+                        Add Prize
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Box>
+
+                <List>
+                  {prizes.map((prize) => (
+                    <ListItem key={prize.id} sx={{ border: '1px solid var(--card-border)', borderRadius: 1, mb: 1 }}>
+                      {editingPrize?.id === prize.id ? (
+                        <Box sx={{ display: 'flex', gap: 2, width: '100%', alignItems: 'center' }}>
+                          <TextField
+                            label="Prize Name"
+                            value={editingPrize.name}
+                            onChange={(e) => setEditingPrize({ ...editingPrize, name: e.target.value })}
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField
+                            label="Emoji"
+                            value={editingPrize.emoji || ''}
+                            onChange={(e) => setEditingPrize({ ...editingPrize, emoji: e.target.value })}
+                            placeholder="🎁"
+                            sx={{ width: 100 }}
+                            inputProps={{ maxLength: 2 }}
+                          />
+                          <TextField
+                            label={`${currencyName} Cost`}
+                            type="number"
+                            value={editingPrize.currency_cost}
+                            onChange={(e) => setEditingPrize({ ...editingPrize, currency_cost: parseInt(e.target.value) || 0 })}
+                            sx={{ width: 120 }}
+                          />
+                          <IconButton onClick={savePrize} color="primary">
+                            <Save />
+                          </IconButton>
+                          <IconButton onClick={() => setEditingPrize(null)}>
+                            <Cancel />
+                          </IconButton>
+                        </Box>
+                      ) : (
+                        <>
+                          <ListItemText
+                            primary={
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {prize.emoji && <span>{prize.emoji}</span>}
+                                <span>{prize.name}</span>
+                              </Box>
+                            }
+                            secondary={`Cost: ${prize.currency_cost || prize.clam_cost || 0} ${currencyEmoji}`}
+                          />
+                          <ListItemSecondaryAction>
+                            <IconButton onClick={() => setEditingPrize({ 
+                              ...prize, 
+                              currency_cost: prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0)
+                            })} color="primary">
+                              <Edit />
+                            </IconButton>
+                            <IconButton onClick={() => deletePrize(prize.id)} color="error">
+                              <Delete />
+                            </IconButton>
+                          </ListItemSecondaryAction>
+                        </>
+                      )}
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+
+            {/* Interface Subtab */}
+            {choresSubTab === 3 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Interface Settings</Typography>
+                <Alert severity="info">
+                  Interface customization for the Chores widget will be available here.
+                </Alert>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Weather Widget Tab */}
+      {isWidgetTab('weather') && (
+        <Card>
+          <CardContent sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>Weather Widget</Typography>
+            
+            <Tabs value={weatherSubTab} onChange={(e, newValue) => setWeatherSubTab(newValue)} sx={{ mb: 3 }}>
+              <Tab label="Settings" />
+              <Tab label="Interface" />
+            </Tabs>
+
+            {/* Settings Subtab */}
+            {weatherSubTab === 0 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>API Configuration</Typography>
+                <TextField
+                  fullWidth
+                  label="OpenWeatherMap API Key"
+                  type="password"
+                  value={settings.WEATHER_API_KEY || ''}
+                  onChange={(e) => setSettings(prev => ({ ...prev, WEATHER_API_KEY: e.target.value }))}
+                  sx={{ mb: 2 }}
+                  helperText="Get your free API key from openweathermap.org"
+                />
+                <Button
+                  variant="contained"
+                  onClick={async () => {
+                    try {
+                      setIsLoading(true);
+                      await axios.post(`${getApiUrl()}/api/settings`, { key: 'WEATHER_API_KEY', value: settings.WEATHER_API_KEY || '' });
+                      setSaveMessage({ show: true, type: 'success', text: 'Weather API Key saved successfully!' });
+                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                    } catch (error) {
+                      console.error('Error saving weather API key:', error);
+                      setSaveMessage({ show: true, type: 'error', text: 'Failed to save weather API key.' });
+                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  startIcon={<Save />}
+                  sx={{ mb: 3 }}
+                >
+                  {isLoading ? 'Saving...' : 'Save API Key'}
+                </Button>
+
+                <Divider sx={{ my: 3 }} />
+
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Weather Location</Typography>
+                <TextField
+                  fullWidth
+                  label="Zip Code"
+                  value={settings.WEATHER_ZIP_CODE || '14818'}
+                  onChange={(e) => setSettings(prev => ({ ...prev, WEATHER_ZIP_CODE: e.target.value }))}
+                  sx={{ mb: 2 }}
+                  helperText="US zip code for weather data (e.g., 14818)"
+                />
+                <Button
+                  variant="contained"
+                  onClick={async () => {
+                    try {
+                      setIsLoading(true);
+                      const zipCode = settings.WEATHER_ZIP_CODE || '14818';
+                      await axios.post(`${getApiUrl()}/api/settings`, {
+                        key: 'WEATHER_ZIP_CODE',
+                        value: zipCode
+                      });
+                      // Refresh settings to ensure state is updated
+                      await fetchSettings();
+                      setSaveMessage({ show: true, type: 'success', text: 'Weather zip code saved successfully!' });
+                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                    } catch (error) {
+                      console.error('Error saving weather zip code:', error);
+                      setSaveMessage({ show: true, type: 'error', text: 'Failed to save weather zip code.' });
+                      setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  startIcon={<Save />}
+                >
+                  {isLoading ? 'Saving...' : 'Save Zip Code'}
+                </Button>
+              </Box>
+            )}
+
+            {/* Interface Subtab */}
+            {weatherSubTab === 1 && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>Interface Settings</Typography>
+                
+                <Typography variant="h6" sx={{ mb: 2 }}>Layout Mode</Typography>
+                <RadioGroup
+                  value={widgetSettings.weather?.layoutMode || 'medium'}
+                  onChange={(e) => handleWeatherLayoutModeChange(e.target.value)}
+                  sx={{ mb: 3 }}
+                >
+                  <FormControlLabel value="compact" control={<Radio />} label="Compact" />
+                  <FormControlLabel value="medium" control={<Radio />} label="Medium" />
+                  <FormControlLabel value="full" control={<Radio />} label="Full" />
+                </RadioGroup>
+
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Compact:</strong> Shows only current weather conditions. Best for minimal space usage.
+                    <br />
+                    <strong>Medium:</strong> Displays current weather plus a 3-day forecast. Balanced information and space.
+                    <br />
+                    <strong>Full:</strong> Complete weather information including charts, air quality, and extended forecast. Maximum detail.
+                  </Typography>
+                </Alert>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Prizes Tab - Moved to Chores Widget Tab */}
+      {false && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Prize Management</Typography>
@@ -4059,8 +5766,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         </Card>
       )}
 
-      {/* House Rules Tab */}
-      {activeTab === 7 && isAuthenticated && (
+      {/* House Rules Widget Tab */}
+      {isWidgetTab('houseRules') && isAuthenticated && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -4120,17 +5827,27 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                     <IconButton
                       edge="end"
                       onClick={async () => {
-                        if (window.confirm('Are you sure you want to delete this rule?')) {
-                          try {
-                            await axios.delete(`${getApiUrl()}/api/house-rules/${rule.id}`, {
-                              headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' }
-                            });
-                            await fetchHouseRules();
-                          } catch (error) {
-                            console.error('Error deleting rule:', error);
-                            alert('Failed to delete rule. Please check your PIN.');
+                        setConfirmationDialog({
+                          open: true,
+                          title: 'Delete House Rule',
+                          message: 'Are you sure you want to delete this rule?',
+                          severity: 'warning',
+                          onConfirm: async () => {
+                            try {
+                              await axios.delete(`${getApiUrl()}/api/house-rules/${rule.id}`, {
+                                headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' }
+                              });
+                              await fetchHouseRules();
+                              setSaveMessage({ show: true, type: 'success', text: 'House rule deleted successfully!' });
+                              setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
+                            } catch (error) {
+                              console.error('Error deleting rule:', error);
+                              const errorMessage = error.response?.data?.error || error.message || 'Failed to delete rule. Please check your PIN.';
+                              setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                              setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
+                            }
                           }
-                        }
+                        });
                       }}
                     >
                       <Delete />
@@ -4149,33 +5866,48 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
         </Card>
       )}
 
-      {/* Marbles Tab */}
-      {activeTab === 8 && isAuthenticated && (
+      {/* Marbles Widget Tab */}
+      {isWidgetTab('marbles') && isAuthenticated && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Marble Management</Typography>
 
             <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>Settings</Typography>
-              <TextField
-                label="Daily Increment"
-                type="number"
-                value={marbleSettings.daily_increment || 3}
-                onChange={async (e) => {
-                  const value = parseInt(e.target.value) || 0;
-                  try {
-                    await axios.put(`${getApiUrl()}/api/marbles/settings`, { daily_increment: value }, {
-                      headers: { 'x-admin-pin': localStorage.getItem('adminPin') || '' }
-                    });
-                    setMarbleSettings({ ...marbleSettings, daily_increment: value });
-                  } catch (error) {
-                    console.error('Error updating marble settings:', error);
-                    alert('Failed to update settings. Please check your PIN.');
-                  }
-                }}
-                sx={{ mb: 2, width: 200 }}
-                InputProps={{ inputProps: { min: 0 } }}
-              />
+              <Typography variant="subtitle1" sx={{ mb: 2 }}>Settings</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Daily Increment"
+                    type="number"
+                    value={marbleSettings.daily_increment ?? 3}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow empty string while typing, then parse to number
+                      if (value === '') {
+                        setMarbleSettings({ ...marbleSettings, daily_increment: 0 });
+                      } else {
+                        const parsed = parseInt(value);
+                        // Properly handle 0 as a valid value (check for NaN, not falsy)
+                        setMarbleSettings({ ...marbleSettings, daily_increment: isNaN(parsed) ? 3 : parsed });
+                      }
+                    }}
+                    helperText="Number of marbles awarded daily"
+                    InputProps={{ inputProps: { min: 0 } }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Button
+                    variant="contained"
+                    onClick={saveMarbleDailyIncrement}
+                    disabled={!isAuthenticated || isLoading}
+                    fullWidth
+                    sx={{ height: '56px', mt: 1 }}
+                  >
+                    Save Daily Increment
+                  </Button>
+                </Grid>
+              </Grid>
             </Box>
 
             <Typography variant="subtitle1" sx={{ mb: 2 }}>User Marbles</Typography>
@@ -4211,7 +5943,9 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                               await fetchMarbles();
                             } catch (error) {
                               console.error('Error toggling marble tracking:', error);
-                              alert('Failed to toggle tracking. Please check your PIN.');
+                              const errorMessage = error.response?.data?.error || error.message || 'Failed to toggle tracking. Please check your PIN.';
+                              setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                              setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
                             }
                           }}
                         />
@@ -4274,7 +6008,7 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
       )}
 
       {/* Plugins Tab */}
-      {activeTab === 9 && (
+      {activeTab === 2 && (
         <Card>
           <CardContent sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Plugin Management</Typography>
@@ -4617,7 +6351,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             variant="contained"
             onClick={async () => {
               if (!ruleForm.rule_text.trim()) {
-                alert('Please enter rule text.');
+                setSaveMessage({ show: true, type: 'error', text: 'Please enter rule text.' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
                 return;
               }
               setSavingRule(true);
@@ -4630,9 +6365,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 }
                 await fetchHouseRules();
                 setShowRuleDialog(false);
+                setSaveMessage({ show: true, type: 'success', text: 'House rule saved successfully!' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
               } catch (error) {
                 console.error('Error saving rule:', error);
-                alert('Failed to save rule. Please check your PIN.');
+                const errorMessage = error.response?.data?.error || error.message || 'Failed to save rule. Please check your PIN.';
+                setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
               } finally {
                 setSavingRule(false);
               }
@@ -4690,7 +6429,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             color="error"
             onClick={async () => {
               if (!removeMarbleForm.amount || !removeMarbleForm.reason.trim()) {
-                alert('Please enter amount and reason.');
+                setSaveMessage({ show: true, type: 'error', text: 'Please enter amount and reason.' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
                 return;
               }
               try {
@@ -4707,9 +6447,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 await fetchMarbles();
                 setRemoveMarbleDialog({ open: false, user: null });
                 setRemoveMarbleForm({ amount: '', reason: '' });
+                setSaveMessage({ show: true, type: 'success', text: 'Marbles removed successfully!' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
               } catch (error) {
                 console.error('Error removing marbles:', error);
-                alert('Failed to remove marbles. Please check your PIN.');
+                const errorMessage = error.response?.data?.error || error.message || 'Failed to remove marbles. Please check your PIN.';
+                setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
               }
             }}
             disabled={!removeMarbleForm.amount || !removeMarbleForm.reason.trim()}
@@ -4757,7 +6501,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             color="warning"
             onClick={async () => {
               if (overrideMarbleForm.count === '' || overrideMarbleForm.count === null || !overrideMarbleForm.reason.trim()) {
-                alert('Please enter count and reason.');
+                setSaveMessage({ show: true, type: 'error', text: 'Please enter count and reason.' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
                 return;
               }
               try {
@@ -4774,9 +6519,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 await fetchMarbles();
                 setOverrideMarbleDialog({ open: false, user: null });
                 setOverrideMarbleForm({ count: '', reason: '' });
+                setSaveMessage({ show: true, type: 'success', text: 'Marble count overridden successfully!' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
               } catch (error) {
                 console.error('Error overriding marbles:', error);
-                alert('Failed to override marbles. Please check your PIN.');
+                const errorMessage = error.response?.data?.error || error.message || 'Failed to override marbles. Please check your PIN.';
+                setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
               }
             }}
             disabled={overrideMarbleForm.count === '' || overrideMarbleForm.count === null || !overrideMarbleForm.reason.trim()}
@@ -4824,7 +6573,8 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
             color="warning"
             onClick={async () => {
               if (overrideMarbleForm.count === '' || overrideMarbleForm.count === null || !overrideMarbleForm.reason.trim()) {
-                alert('Please enter count and reason.');
+                setSaveMessage({ show: true, type: 'error', text: 'Please enter count and reason.' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
                 return;
               }
               try {
@@ -4841,9 +6591,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 await fetchMarbles();
                 setOverrideMarbleDialog({ open: false, user: null });
                 setOverrideMarbleForm({ count: '', reason: '' });
+                setSaveMessage({ show: true, type: 'success', text: 'Marble count overridden successfully!' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
               } catch (error) {
                 console.error('Error overriding marbles:', error);
-                alert('Failed to override marbles. Please check your PIN.');
+                const errorMessage = error.response?.data?.error || error.message || 'Failed to override marbles. Please check your PIN.';
+                setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
               }
             }}
             disabled={overrideMarbleForm.count === '' || overrideMarbleForm.count === null || !overrideMarbleForm.reason.trim()}
@@ -4998,9 +6752,13 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
                 await fetchPhotoSources();
                 setShowPhotoSourceDialog(false);
                 setPhotoTestResult(null);
+                setSaveMessage({ show: true, type: 'success', text: 'Photo source saved successfully!' });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 3000);
               } catch (error) {
                 console.error('Error saving photo source:', error);
-                alert('Failed to save photo source. Please try again.');
+                const errorMessage = error.response?.data?.error || error.message || 'Failed to save photo source. Please try again.';
+                setSaveMessage({ show: true, type: 'error', text: errorMessage });
+                setTimeout(() => setSaveMessage({ show: false, type: '', text: '' }), 5000);
               } finally {
                 setSavingPhotoSource(false);
               }
@@ -5020,6 +6778,20 @@ const AdminPanel = ({ setWidgetSettings, onWidgetUploaded, onSettingsSaved, onCl
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        open={confirmationDialog.open}
+        onClose={() => setConfirmationDialog({ ...confirmationDialog, open: false })}
+        onConfirm={() => {
+          if (confirmationDialog.onConfirm) {
+            confirmationDialog.onConfirm();
+          }
+        }}
+        title={confirmationDialog.title}
+        message={confirmationDialog.message}
+        severity={confirmationDialog.severity}
+      />
         </Box>
       </Box>
     </ThemeProvider>

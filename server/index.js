@@ -7,12 +7,20 @@ const fs = require('fs').promises;
 const multipart = require('@fastify/multipart');
 const crypto = require('crypto');
 require('dotenv').config();
+const { getGoogleFonts } = require('./googleFonts');
 
 // NEW: Import axios for HTTP requests and ical.js for parsing
 const axios = require('axios');
 const ICAL = require('ical.js');
 // For widget upload and registry
 const widgetRegistryPath = path.join(__dirname, 'widgets_registry.json');
+
+// Theme directories
+const themesColorsDir = path.join(__dirname, 'themes', 'colors');
+const themesFontsDir = path.join(__dirname, 'themes', 'fonts');
+
+// Google Fonts Developer API key (for main app typography)
+const GOOGLE_FONTS_API_KEY = process.env.GOOGLE_FONTS_API_KEY || '';
 
 // Photo cache directory
 const photoCacheDir = path.join(__dirname, 'cache', 'photos');
@@ -665,7 +673,7 @@ async function initializeDatabase() {
         assigned_day_of_week TEXT,\
         repeat_type TEXT,\
         completed BOOLEAN,
-        clam_value INTEGER DEFAULT 0,
+        currency_value INTEGER DEFAULT 0,
         expiration_date TEXT
       );\
       CREATE TABLE IF NOT EXISTS users (
@@ -673,9 +681,9 @@ async function initializeDatabase() {
         username TEXT,\
         email TEXT,\
         profile_picture TEXT,\
-        clam_total INTEGER DEFAULT 0
+        currency_total INTEGER DEFAULT 0
       );
-      INSERT OR IGNORE INTO users (id, username, email, profile_picture, clam_total) VALUES (0, 'bonus', 'bonus@example.com', '', 0);\
+      INSERT OR IGNORE INTO users (id, username, email, profile_picture, currency_total) VALUES (0, 'bonus', 'bonus@example.com', '', 0);\
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,\
         user_id INTEGER,\
@@ -691,7 +699,7 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS prizes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        clam_cost INTEGER NOT NULL,
+        currency_cost INTEGER NOT NULL,
         emoji TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS calendar_sources (
@@ -815,10 +823,38 @@ async function initializeDatabase() {
       newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('MARBLE_DAILY_INCREMENT', '3');
     }
     
-    // Set default PRIZE_MINIMUM_SHELLS if not exists
-    const prizeMinimum = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_SHELLS');
+    // Set default PRIZE_MINIMUM_CURRENCY if not exists
+    const prizeMinimum = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_CURRENCY');
     if (!prizeMinimum) {
-      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('PRIZE_MINIMUM_SHELLS', '0');
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('PRIZE_MINIMUM_CURRENCY', '0');
+    }
+    
+    // Set default currency name settings if not exists
+    const currencyNameSingular = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_NAME_SINGULAR');
+    if (!currencyNameSingular) {
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_NAME_SINGULAR', 'Clam');
+    }
+    
+    const currencyNamePlural = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_NAME_PLURAL');
+    if (!currencyNamePlural) {
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_NAME_PLURAL', 'Clams');
+    }
+    
+    const currencyEmoji = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_EMOJI');
+    if (!currencyEmoji) {
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_EMOJI', '🥟');
+    }
+    
+    // Set default BONUS_CHORE_CURRENCY_VALUE if not exists
+    const bonusChoreValue = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('BONUS_CHORE_CURRENCY_VALUE');
+    if (!bonusChoreValue) {
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('BONUS_CHORE_CURRENCY_VALUE', '1');
+    }
+    
+    // Set default DAILY_CHORES_COMPLETION_BONUS if not exists
+    const dailyChoresBonus = newDb.prepare('SELECT value FROM settings WHERE key = ?').get('DAILY_CHORES_COMPLETION_BONUS');
+    if (!dailyChoresBonus) {
+      newDb.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('DAILY_CHORES_COMPLETION_BONUS', '2');
     }
     
     // Migration: Add track_marbles column if it doesn't exist
@@ -874,12 +910,12 @@ async function initializeDatabase() {
             assigned_day_of_week TEXT,
             repeat_type TEXT,
             completed BOOLEAN,
-            clam_value INTEGER DEFAULT 0,
+            currency_value INTEGER DEFAULT 0,
             expiration_date TEXT
           );
           
-          INSERT INTO chores_new (id, user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date)
-          SELECT id, user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date
+          INSERT INTO chores_new (id, user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date)
+          SELECT id, user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date
           FROM chores;
           
           DROP TABLE chores;
@@ -933,11 +969,11 @@ async function pruneAndResetChores() {
     const now = new Date();
 
     // Select all chores to process
-    const allChores = db.prepare('SELECT id, user_id, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date FROM chores').all();
+    const allChores = db.prepare('SELECT id, user_id, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date FROM chores').all();
 
     for (const chore of allChores) {
       // Handle bonus chores
-      if (chore.clam_value > 0) {
+      if (chore.currency_value > 0) {
         // If bonus chore is completed, delete it
         if (chore.completed) {
           db.prepare('DELETE FROM chores WHERE id = ?').run(chore.id);
@@ -980,7 +1016,7 @@ async function pruneAndResetChores() {
             // Create a new instance for today if it doesn't exist
             const existingTodayChore = db.prepare('SELECT id FROM chores WHERE user_id = ? AND title = ? AND assigned_day_of_week = ? AND repeat_type = "until-completed"').get(chore.user_id, chore.title, currentDay);
             if (!existingTodayChore) {
-              db.prepare('INSERT INTO chores (user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+              db.prepare('INSERT INTO chores (user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
                 chore.user_id, chore.title, chore.description || '', chore.time_period || 'any-time', currentDay, 'until-completed', 0, 0, null
               );
               console.log(`Created new "until-completed" chore instance for today: ${chore.title}`);
@@ -1007,11 +1043,11 @@ fastify.get('/api/chores', async (request, reply) => {
 });
 
 fastify.post('/api/chores', async (request, reply) => {
-  const { user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date } = request.body;
+  const { user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date } = request.body;
   try {
     const completedInt = completed ? 1 : 0;
-    const stmt = db.prepare('INSERT INTO chores (user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, clam_value, expiration_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    const info = stmt.run(user_id, title, description, time_period, assigned_day_of_week, repeat_type, completedInt, clam_value, expiration_date);
+    const stmt = db.prepare('INSERT INTO chores (user_id, title, description, time_period, assigned_day_of_week, repeat_type, completed, currency_value, expiration_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const info = stmt.run(user_id, title, description, time_period, assigned_day_of_week, repeat_type, completedInt, currency_value, expiration_date);
     return { id: info.lastInsertRowid };
   } catch (error) {
     console.error('Error adding chore:', error);
@@ -1027,36 +1063,46 @@ fastify.patch('/api/chores/:id', async (request, reply) => {
     const stmt = db.prepare('UPDATE chores SET completed = ? WHERE id = ?');
     stmt.run(completedInt, id);
 
-    // --- Clam Reward Logic ---\
+    // --- Currency Reward Logic ---\
     // Get the chore details to find the user_id and assigned_day_of_week
-    const chore = db.prepare('SELECT user_id, clam_value, assigned_day_of_week FROM chores WHERE id = ?').get(id);
+    const chore = db.prepare('SELECT user_id, currency_value, assigned_day_of_week FROM chores WHERE id = ?').get(id);
 
     if (chore) {
       // 1. Reward for bonus chores
-      if (completed && chore.clam_value > 0) { // Only reward if marked completed and it's a bonus chore
-        const userUpdateStmt = db.prepare('UPDATE users SET clam_total = clam_total + ? WHERE id = ?');
-        userUpdateStmt.run(chore.clam_value, chore.user_id);
-        console.log(`User ${chore.user_id} rewarded ${chore.clam_value} clams for completing bonus chore ID ${id}.`);
+      if (completed && chore.currency_value > 0) { // Only reward if marked completed and it's a bonus chore
+        const userUpdateStmt = db.prepare('UPDATE users SET currency_total = currency_total + ? WHERE id = ?');
+        userUpdateStmt.run(chore.currency_value, chore.user_id);
+        console.log(`User ${chore.user_id} rewarded ${chore.currency_value} currency for completing bonus chore ID ${id}.`);
       }
 
       // 2. Reward for completing all *regular* daily chores
-      // Only apply this if the current chore is NOT a bonus chore (clam_value === 0)
-      if (completed && chore.clam_value === 0) {
+      // Only apply this if the current chore is NOT a bonus chore (currency_value === 0)
+      if (completed && chore.currency_value === 0) {
         // Get all *regular* chores for this user and day
-        const usersRegularChoresForDay = db.prepare('SELECT completed FROM chores WHERE user_id = ? AND assigned_day_of_week = ? AND clam_value = 0').all(chore.user_id, chore.assigned_day_of_week);
+        const usersRegularChoresForDay = db.prepare('SELECT completed FROM chores WHERE user_id = ? AND assigned_day_of_week = ? AND currency_value = 0').all(chore.user_id, chore.assigned_day_of_week);
 
         // Check if all *regular* chores for this user and day are completed
         const allRegularChoresCompleted = usersRegularChoresForDay.every(c => c.completed === 1);
 
         if (allRegularChoresCompleted) {
-          // Reward user with 2 clams
-          const userUpdateStmt = db.prepare('UPDATE users SET clam_total = clam_total + 2 WHERE id = ?');
-          userUpdateStmt.run(chore.user_id);
-          console.log(`User ${chore.user_id} rewarded 2 clams for completing all regular chores on ${chore.assigned_day_of_week}.`);
+          // Get the daily chores completion bonus from settings
+          const bonusSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('DAILY_CHORES_COMPLETION_BONUS');
+          // Use nullish coalescing to properly handle 0 as a valid value
+          const parsedValue = bonusSetting ? parseInt(bonusSetting.value) : null;
+          const bonusAmount = (parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 2;
+          
+          // Only reward if bonus amount is greater than 0
+          if (bonusAmount > 0) {
+            const userUpdateStmt = db.prepare('UPDATE users SET currency_total = currency_total + ? WHERE id = ?');
+            userUpdateStmt.run(bonusAmount, chore.user_id);
+            console.log(`User ${chore.user_id} rewarded ${bonusAmount} currency for completing all regular chores on ${chore.assigned_day_of_week}.`);
+          } else {
+            console.log(`User ${chore.user_id} completed all regular chores on ${chore.assigned_day_of_week}, but completion bonus is set to 0.`);
+          }
         }
       }
     }
-    // --- End Clam Reward Logic ---\
+    // --- End Currency Reward Logic ---\
 
     return { success: true };
   } catch (error) {
@@ -1089,16 +1135,16 @@ fastify.patch('/api/chores/:id/assign', async (request, reply) => {
 
   try {
     // 1. Check if the chore exists and is a bonus chore (assigned to user_id 0)
-    const chore = db.prepare('SELECT id, user_id, completed, clam_value FROM chores WHERE id = ?').get(id);
+    const chore = db.prepare('SELECT id, user_id, completed, currency_value FROM chores WHERE id = ?').get(id);
     if (!chore) {
       return reply.status(404).send({ error: 'Chore not found.' });
     }
-    if (chore.user_id !== 0 || chore.clam_value === 0) {
+    if (chore.user_id !== 0 || chore.currency_value === 0) {
       return reply.status(400).send({ error: 'This is not an unassigned bonus chore.' });
     }
 
     // 2. Check if the target user already has an uncompleted bonus chore
-    const existingBonusChore = db.prepare('SELECT id FROM chores WHERE user_id = ? AND clam_value > 0 AND completed = 0').get(user_id);
+    const existingBonusChore = db.prepare('SELECT id FROM chores WHERE user_id = ? AND currency_value > 0 AND completed = 0').get(user_id);
     if (existingBonusChore) {
       return reply.status(409).send({ error: 'User already has an uncompleted bonus chore. Complete it first!' });
     }
@@ -1121,7 +1167,7 @@ fastify.patch('/api/chores/:id/assign', async (request, reply) => {
 // User routes
 fastify.get('/api/users', async (request, reply) => {
   try {
-    const rows = db.prepare('SELECT id, username, email, profile_picture, clam_total FROM users').all();
+    const rows = db.prepare('SELECT id, username, email, profile_picture, currency_total FROM users').all();
     return rows;
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -1243,17 +1289,18 @@ fastify.post('/api/users/:id/upload-picture', async (request, reply) => {
   }
 });
 
-// NEW: Endpoint to update user clam total (for manual adjustments or future use)
+// NEW: Endpoint to update user currency total (for manual adjustments or future use)
 fastify.patch('/api/users/:id/clams', async (request, reply) => {
   const { id } = request.params;
-  const { clam_total } = request.body; // Expecting the new total or a delta
+  const { currency_total, clam_total } = request.body; // Support both for backward compatibility
+  const total = currency_total !== undefined ? currency_total : clam_total;
   try {
-    const stmt = db.prepare('UPDATE users SET clam_total = ? WHERE id = ?');
-    stmt.run(clam_total, id);
+    const stmt = db.prepare('UPDATE users SET currency_total = ? WHERE id = ?');
+    stmt.run(total, id);
     return { success: true };
   } catch (error) {
-    console.error('Error updating user clams:', error);
-    reply.status(500).send({ error: 'Failed to update user clams' });
+    console.error('Error updating user currency:', error);
+    reply.status(500).send({ error: 'Failed to update user currency' });
   }
 });
 
@@ -1624,13 +1671,13 @@ fastify.get('/api/prizes', async (request, reply) => {
 });
 
 fastify.post('/api/prizes', async (request, reply) => {
-  const { name, clam_cost, emoji } = request.body;
-  if (!name || !clam_cost || clam_cost <= 0) {
-    return reply.status(400).send({ error: 'Prize name and a positive clam cost are required.' });
+  const { name, currency_cost, emoji } = request.body;
+  if (!name || !currency_cost || currency_cost <= 0) {
+    return reply.status(400).send({ error: 'Prize name and a positive currency cost are required.' });
   }
   try {
-    const stmt = db.prepare('INSERT INTO prizes (name, clam_cost, emoji) VALUES (?, ?, ?)');
-    const info = stmt.run(name, clam_cost, emoji || '');
+    const stmt = db.prepare('INSERT INTO prizes (name, currency_cost, emoji) VALUES (?, ?, ?)');
+    const info = stmt.run(name, currency_cost, emoji || '');
     return { id: info.lastInsertRowid };
   } catch (error) {
     console.error('Error adding prize:', error);
@@ -1640,13 +1687,13 @@ fastify.post('/api/prizes', async (request, reply) => {
 
 fastify.patch('/api/prizes/:id', async (request, reply) => {
   const { id } = request.params;
-  const { name, clam_cost, emoji } = request.body;
-  if (!name || !clam_cost || clam_cost <= 0) {
-    return reply.status(400).send({ error: 'Prize name and a positive clam cost are required.' });
+  const { name, currency_cost, emoji } = request.body;
+  if (!name || !currency_cost || currency_cost <= 0) {
+    return reply.status(400).send({ error: 'Prize name and a positive currency cost are required.' });
   }
   try {
-    const stmt = db.prepare('UPDATE prizes SET name = ?, clam_cost = ?, emoji = ? WHERE id = ?');
-    const info = stmt.run(name, clam_cost, emoji || '', id);
+    const stmt = db.prepare('UPDATE prizes SET name = ?, currency_cost = ?, emoji = ? WHERE id = ?');
+    const info = stmt.run(name, currency_cost, emoji || '', id);
     if (info.changes === 0) {
       return reply.status(404).send({ error: 'Prize not found' });
     }
@@ -1672,31 +1719,175 @@ fastify.delete('/api/prizes/:id', async (request, reply) => {
   }
 });
 
-// GET /api/settings/PRIZE_MINIMUM_SHELLS - Get minimum shells setting
-fastify.get('/api/settings/PRIZE_MINIMUM_SHELLS', async (request, reply) => {
+// GET /api/settings/PRIZE_MINIMUM_CURRENCY - Get minimum currency setting
+fastify.get('/api/settings/PRIZE_MINIMUM_CURRENCY', async (request, reply) => {
   try {
-    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_SHELLS');
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_CURRENCY');
     return { value: setting ? parseInt(setting.value) || 0 : 0 };
   } catch (error) {
-    console.error('Error fetching PRIZE_MINIMUM_SHELLS:', error);
-    reply.status(500).send({ error: 'Failed to fetch minimum shells setting' });
+    console.error('Error fetching PRIZE_MINIMUM_CURRENCY:', error);
+    reply.status(500).send({ error: 'Failed to fetch minimum currency setting' });
   }
 });
 
-// PUT /api/settings/PRIZE_MINIMUM_SHELLS - Update minimum shells setting (admin only)
-fastify.put('/api/settings/PRIZE_MINIMUM_SHELLS', async (request, reply) => {
+// PUT /api/settings/PRIZE_MINIMUM_CURRENCY - Update minimum currency setting (admin only)
+fastify.put('/api/settings/PRIZE_MINIMUM_CURRENCY', async (request, reply) => {
   if (requireAdminPIN(request, reply)) return;
   
   const { value } = request.body;
   if (value === undefined || value < 0) {
-    return reply.status(400).send({ error: 'Minimum shells must be a non-negative number' });
+    return reply.status(400).send({ error: 'Minimum currency must be a non-negative number' });
   }
   try {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('PRIZE_MINIMUM_SHELLS', String(value));
-    return { success: true, message: 'Minimum shells setting updated successfully' };
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('PRIZE_MINIMUM_CURRENCY', String(value));
+    return { success: true, message: 'Minimum currency setting updated successfully' };
   } catch (error) {
-    console.error('Error updating PRIZE_MINIMUM_SHELLS:', error);
-    reply.status(500).send({ error: 'Failed to update minimum shells setting' });
+    console.error('Error updating PRIZE_MINIMUM_CURRENCY:', error);
+    reply.status(500).send({ error: 'Failed to update minimum currency setting' });
+  }
+});
+
+// GET /api/settings/CURRENCY_NAME_SINGULAR - Get currency name (singular)
+fastify.get('/api/settings/CURRENCY_NAME_SINGULAR', async (request, reply) => {
+  try {
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_NAME_SINGULAR');
+    return { value: setting ? setting.value : 'Clam' };
+  } catch (error) {
+    console.error('Error fetching CURRENCY_NAME_SINGULAR:', error);
+    reply.status(500).send({ error: 'Failed to fetch currency name setting' });
+  }
+});
+
+// PUT /api/settings/CURRENCY_NAME_SINGULAR - Update currency name (singular) (admin only)
+fastify.put('/api/settings/CURRENCY_NAME_SINGULAR', async (request, reply) => {
+  if (requireAdminPIN(request, reply)) return;
+  
+  const { value } = request.body;
+  if (!value || typeof value !== 'string') {
+    return reply.status(400).send({ error: 'Currency name must be a non-empty string' });
+  }
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_NAME_SINGULAR', value);
+    return { success: true, message: 'Currency name updated successfully' };
+  } catch (error) {
+    console.error('Error updating CURRENCY_NAME_SINGULAR:', error);
+    reply.status(500).send({ error: 'Failed to update currency name setting' });
+  }
+});
+
+// GET /api/settings/CURRENCY_NAME_PLURAL - Get currency name (plural)
+fastify.get('/api/settings/CURRENCY_NAME_PLURAL', async (request, reply) => {
+  try {
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_NAME_PLURAL');
+    return { value: setting ? setting.value : 'Clams' };
+  } catch (error) {
+    console.error('Error fetching CURRENCY_NAME_PLURAL:', error);
+    reply.status(500).send({ error: 'Failed to fetch currency name plural setting' });
+  }
+});
+
+// PUT /api/settings/CURRENCY_NAME_PLURAL - Update currency name (plural) (admin only)
+fastify.put('/api/settings/CURRENCY_NAME_PLURAL', async (request, reply) => {
+  if (requireAdminPIN(request, reply)) return;
+  
+  const { value } = request.body;
+  if (!value || typeof value !== 'string') {
+    return reply.status(400).send({ error: 'Currency name plural must be a non-empty string' });
+  }
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_NAME_PLURAL', value);
+    return { success: true, message: 'Currency name plural updated successfully' };
+  } catch (error) {
+    console.error('Error updating CURRENCY_NAME_PLURAL:', error);
+    reply.status(500).send({ error: 'Failed to update currency name plural setting' });
+  }
+});
+
+// GET /api/settings/CURRENCY_EMOJI - Get currency emoji
+fastify.get('/api/settings/CURRENCY_EMOJI', async (request, reply) => {
+  try {
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('CURRENCY_EMOJI');
+    return { value: setting ? setting.value : '🥟' };
+  } catch (error) {
+    console.error('Error fetching CURRENCY_EMOJI:', error);
+    reply.status(500).send({ error: 'Failed to fetch currency emoji setting' });
+  }
+});
+
+// PUT /api/settings/CURRENCY_EMOJI - Update currency emoji (admin only)
+fastify.put('/api/settings/CURRENCY_EMOJI', async (request, reply) => {
+  if (requireAdminPIN(request, reply)) return;
+  
+  const { value } = request.body;
+  if (value === undefined || typeof value !== 'string') {
+    return reply.status(400).send({ error: 'Currency emoji must be a string' });
+  }
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('CURRENCY_EMOJI', value);
+    return { success: true, message: 'Currency emoji updated successfully' };
+  } catch (error) {
+    console.error('Error updating CURRENCY_EMOJI:', error);
+    reply.status(500).send({ error: 'Failed to update currency emoji setting' });
+  }
+});
+
+// GET /api/settings/BONUS_CHORE_CURRENCY_VALUE - Get bonus chore currency value
+fastify.get('/api/settings/BONUS_CHORE_CURRENCY_VALUE', async (request, reply) => {
+  try {
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('BONUS_CHORE_CURRENCY_VALUE');
+    // Use nullish coalescing to properly handle 0 as a valid value
+    const parsedValue = setting ? parseInt(setting.value) : null;
+    return { value: (parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 1 };
+  } catch (error) {
+    console.error('Error fetching BONUS_CHORE_CURRENCY_VALUE:', error);
+    reply.status(500).send({ error: 'Failed to fetch bonus chore currency value setting' });
+  }
+});
+
+// PUT /api/settings/BONUS_CHORE_CURRENCY_VALUE - Update bonus chore currency value (admin only)
+fastify.put('/api/settings/BONUS_CHORE_CURRENCY_VALUE', async (request, reply) => {
+  if (requireAdminPIN(request, reply)) return;
+  
+  const { value } = request.body;
+  if (value === undefined || value < 0 || isNaN(value)) {
+    return reply.status(400).send({ error: 'Bonus chore currency value must be a non-negative number' });
+  }
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('BONUS_CHORE_CURRENCY_VALUE', String(value));
+    return { success: true, message: 'Bonus chore currency value updated successfully' };
+  } catch (error) {
+    console.error('Error updating BONUS_CHORE_CURRENCY_VALUE:', error);
+    reply.status(500).send({ error: 'Failed to update bonus chore currency value setting' });
+  }
+});
+
+// GET /api/settings/DAILY_CHORES_COMPLETION_BONUS - Get daily chores completion bonus
+fastify.get('/api/settings/DAILY_CHORES_COMPLETION_BONUS', async (request, reply) => {
+  try {
+    const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('DAILY_CHORES_COMPLETION_BONUS');
+    // Use nullish coalescing to properly handle 0 as a valid value
+    const parsedValue = setting ? parseInt(setting.value) : null;
+    return { value: (parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 2 };
+  } catch (error) {
+    console.error('Error fetching DAILY_CHORES_COMPLETION_BONUS:', error);
+    reply.status(500).send({ error: 'Failed to fetch daily chores completion bonus setting' });
+  }
+});
+
+// PUT /api/settings/DAILY_CHORES_COMPLETION_BONUS - Update daily chores completion bonus (admin only)
+fastify.put('/api/settings/DAILY_CHORES_COMPLETION_BONUS', async (request, reply) => {
+  if (requireAdminPIN(request, reply)) return;
+  
+  const { value } = request.body;
+  if (value === undefined || value < 0 || isNaN(value)) {
+    return reply.status(400).send({ error: 'Daily chores completion bonus must be a non-negative number' });
+  }
+  try {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('DAILY_CHORES_COMPLETION_BONUS', String(value));
+    return { success: true, message: 'Daily chores completion bonus updated successfully' };
+  } catch (error) {
+    console.error('Error updating DAILY_CHORES_COMPLETION_BONUS:', error);
+    reply.status(500).send({ error: 'Failed to update daily chores completion bonus setting' });
   }
 });
 
@@ -2176,15 +2367,15 @@ fastify.post('/api/meal-suggestions/:id/convert', async (request, reply) => {
   }
 });
 
-// POST /api/prizes/select - Select a prize and deduct shells
+// POST /api/prizes/select - Select a prize and deduct currency
 fastify.post('/api/prizes/select', async (request, reply) => {
   const { user_id, prize_id } = request.body;
   if (!user_id || !prize_id) {
     return reply.status(400).send({ error: 'User ID and Prize ID are required' });
   }
   try {
-    // Get user's current shell balance
-    const user = db.prepare('SELECT clam_total FROM users WHERE id = ?').get(user_id);
+    // Get user's current currency balance
+    const user = db.prepare('SELECT currency_total FROM users WHERE id = ?').get(user_id);
     if (!user) {
       return reply.status(404).send({ error: 'User not found' });
     }
@@ -2195,28 +2386,28 @@ fastify.post('/api/prizes/select', async (request, reply) => {
       return reply.status(404).send({ error: 'Prize not found' });
     }
     
-    // Check if user has enough shells
-    if (user.clam_total < prize.clam_cost) {
-      return reply.status(400).send({ error: 'Insufficient shells to purchase this prize' });
+    // Check if user has enough currency
+    if (user.currency_total < prize.currency_cost) {
+      return reply.status(400).send({ error: 'Insufficient currency to purchase this prize' });
     }
     
-    // Get minimum shells setting
-    const minShellsSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_SHELLS');
-    const minShells = minShellsSetting ? parseInt(minShellsSetting.value) || 0 : 0;
+    // Get minimum currency setting
+    const minCurrencySetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('PRIZE_MINIMUM_CURRENCY');
+    const minCurrency = minCurrencySetting ? parseInt(minCurrencySetting.value) || 0 : 0;
     
     // Check if user meets minimum requirement
-    if (user.clam_total < minShells) {
-      return reply.status(400).send({ error: `User must have at least ${minShells} shells to spin for prizes` });
+    if (user.currency_total < minCurrency) {
+      return reply.status(400).send({ error: `User must have at least ${minCurrency} currency to purchase prizes` });
     }
     
-    // Deduct shells
-    const updateStmt = db.prepare('UPDATE users SET clam_total = clam_total - ? WHERE id = ?');
-    updateStmt.run(prize.clam_cost, user_id);
+    // Deduct currency
+    const updateStmt = db.prepare('UPDATE users SET currency_total = currency_total - ? WHERE id = ?');
+    updateStmt.run(prize.currency_cost, user_id);
     
     return { 
       success: true, 
       prize: prize,
-      remaining_shells: user.clam_total - prize.clam_cost
+      remaining_currency: user.currency_total - prize.currency_cost
     };
   } catch (error) {
     console.error('Error selecting prize:', error);
@@ -3924,8 +4115,10 @@ fastify.get('/api/marbles/:userId/history', async (request, reply) => {
 fastify.get('/api/marbles/settings', async (request, reply) => {
   try {
     const incrementSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MARBLE_DAILY_INCREMENT');
+    // Use nullish coalescing to properly handle 0 as a valid value
+    const parsedValue = incrementSetting?.value ? parseInt(incrementSetting.value) : null;
     return {
-      daily_increment: parseInt(incrementSetting?.value || '3')
+      daily_increment: (parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 3
     };
   } catch (error) {
     console.error('Error fetching marble settings:', error);
@@ -4566,6 +4759,471 @@ fastify.get('/api/photo-items', async (request, reply) => {
   } catch (error) {
     console.error('Error fetching photos:', error);
     reply.status(500).send({ error: 'Failed to fetch photos.' });
+  }
+});
+
+// Helper function to load and parse theme files
+async function loadThemeFiles(dir, type) {
+  const themes = [];
+  try {
+    const files = await fs.readdir(dir);
+    for (const file of files) {
+      // Skip example files and non-JSON files
+      if (file.endsWith('.example') || !file.endsWith('.json')) {
+        continue;
+      }
+      
+      try {
+        const filePath = path.join(dir, file);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const theme = JSON.parse(content);
+        
+        // Validate structure
+        if (type === 'color') {
+          if (!theme.id || !theme.name || !theme.settings || !theme.settings.colors) {
+            console.warn(`[Themes] Invalid color theme file ${file}: missing required fields`);
+            continue;
+          }
+          if (!theme.settings.colors.light || !theme.settings.colors.dark) {
+            console.warn(`[Themes] Invalid color theme file ${file}: missing light or dark colors`);
+            continue;
+          }
+        } else if (type === 'font') {
+          const missingFields = [];
+          if (!theme.id) missingFields.push('id');
+          if (!theme.name) missingFields.push('name');
+          if (!theme.fontFamily) missingFields.push('fontFamily');
+          if (theme.fontWeight === undefined) missingFields.push('fontWeight');
+          if (!theme.fontStyle) missingFields.push('fontStyle');
+          
+          if (missingFields.length > 0) {
+            console.warn(`[Themes] Invalid font file ${file}: missing required fields: ${missingFields.join(', ')}`);
+            console.warn(`[Themes] File content:`, JSON.stringify(theme, null, 2));
+            continue;
+          }
+        }
+        
+        themes.push(theme);
+      } catch (error) {
+        console.warn(`[Themes] Error parsing ${file}:`, error.message);
+        continue;
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`[Themes] Error reading ${type} themes directory:`, error);
+    }
+  }
+  return themes;
+}
+
+// GET /api/themes/colors - Get all custom color themes
+fastify.get('/api/themes/colors', async (request, reply) => {
+  try {
+    const themes = await loadThemeFiles(themesColorsDir, 'color');
+    return themes;
+  } catch (error) {
+    console.error('Error fetching color themes:', error);
+    reply.status(500).send({ error: 'Failed to fetch color themes.' });
+  }
+});
+
+// GET /api/themes/colors/:id - Get specific color theme
+fastify.get('/api/themes/colors/:id', async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const filePath = path.join(themesColorsDir, `${id}.json`);
+    
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      const theme = JSON.parse(content);
+      
+      // Validate structure
+      if (!theme.id || !theme.name || !theme.settings || !theme.settings.colors) {
+        return reply.status(400).send({ error: 'Invalid theme file structure.' });
+      }
+      
+      return theme;
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return reply.status(404).send({ error: 'Theme not found.' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error fetching color theme:', error);
+    reply.status(500).send({ error: 'Failed to fetch color theme.' });
+  }
+});
+
+// DELETE /api/themes/colors/:id - Delete a custom color theme
+fastify.delete('/api/themes/colors/:id', async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const filePath = path.join(themesColorsDir, `${id}.json`);
+
+    try {
+      await fs.unlink(filePath);
+      return { success: true, message: 'Color theme deleted successfully.' };
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return reply.status(404).send({ error: 'Theme not found.' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error deleting color theme:', error);
+    reply.status(500).send({ error: 'Failed to delete color theme.' });
+  }
+});
+
+// GET /api/themes/fonts - Get all fonts (Google Fonts + custom), with graceful fallback
+fastify.get('/api/themes/fonts', async (request, reply) => {
+  try {
+    // Load locally stored/custom fonts from themes directory
+    const localFonts = await loadThemeFiles(themesFontsDir, 'font');
+
+    // If Google Fonts API key is configured, try to fetch Google Fonts
+    if (GOOGLE_FONTS_API_KEY) {
+      try {
+        fastify.log.info('[Main Fonts API] Fetching fonts from Google Fonts Developer API');
+        const googleFonts = await getGoogleFonts(GOOGLE_FONTS_API_KEY, {
+          sort: 'popularity'
+        });
+
+        fastify.log.info(
+          `[Main Fonts API] Successfully fetched ${googleFonts.length} fonts from Google Fonts API`
+        );
+
+        // Merge Google fonts with local fonts, de-duplicating by id (local overrides Google)
+        const fontMap = new Map();
+
+        // Start with Google fonts
+        for (const font of googleFonts) {
+          fontMap.set(font.id, font);
+        }
+
+        // Overlay local fonts (e.g., cabin.json) so they take precedence if ids collide
+        for (const font of localFonts) {
+          if (font && font.id) {
+            fontMap.set(font.id, font);
+          }
+        }
+
+        const mergedFonts = Array.from(fontMap.values()).sort((a, b) =>
+          a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+        );
+
+        return mergedFonts;
+      } catch (error) {
+        fastify.log.warn(
+          `[Main Fonts API] Failed to fetch from Google Fonts API: ${error.message}`
+        );
+        fastify.log.info('[Main Fonts API] Falling back to local fonts only');
+        // Fall through to return local fonts
+      }
+    } else {
+      fastify.log.info(
+        '[Main Fonts API] GOOGLE_FONTS_API_KEY not configured, using local fonts only'
+      );
+    }
+
+    // Fallback: only local fonts
+    return localFonts;
+  } catch (error) {
+    console.error('Error fetching fonts:', error);
+    reply.status(500).send({ error: 'Failed to fetch fonts.' });
+  }
+});
+
+// === Palette generation helpers (ported from Designer server) ===
+
+function getModeHues(baseHue, mode) {
+  const norm = (h) => ((h % 360) + 360) % 360;
+
+  switch (mode) {
+    case 'monochromatic':
+      return {
+        primaryHue: norm(baseHue),
+        secondaryHue: norm(baseHue + 10),
+        accentHue: norm(baseHue - 10)
+      };
+    case 'analogous':
+      return {
+        primaryHue: norm(baseHue),
+        secondaryHue: norm(baseHue + 30),
+        accentHue: norm(baseHue - 30)
+      };
+    case 'triadic':
+      return {
+        primaryHue: norm(baseHue),
+        secondaryHue: norm(baseHue + 120),
+        accentHue: norm(baseHue + 240)
+      };
+    case 'complementary':
+    default:
+      return {
+        primaryHue: norm(baseHue),
+        secondaryHue: norm(baseHue + 180),
+        accentHue: norm(baseHue + 150)
+      };
+  }
+}
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) =>
+    l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+function lightenHex(hex, amount) {
+  // amount: 0–1
+  let h, s, l;
+  ({ h, s, l } = hexToHsl(hex));
+  l = Math.min(100, l + amount * 100);
+  return hslToHex(h, s, l);
+}
+
+function darkenHex(hex, amount) {
+  let h, s, l;
+  ({ h, s, l } = hexToHsl(hex));
+  l = Math.max(0, l - amount * 100);
+  return hslToHex(h, s, l);
+}
+
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h,
+    s,
+    l = (max + min) / 2;
+
+  if (max === min) {
+    h = s = 0;
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h *= 60;
+  }
+
+  return { h, s: s * 100, l: l * 100 };
+}
+
+function relativeLuminance(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+  const channel = (c) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+
+  const R = channel(r);
+  const G = channel(g);
+  const B = channel(b);
+
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+}
+
+function ensureContrast(colors, fgKey, bgKey) {
+  const fg = colors[fgKey];
+  const bg = colors[bgKey];
+  if (!fg || !bg) return;
+
+  let current = fg;
+  let ratio = contrastRatio(fg, bg);
+
+  const targetRatio = 4.5; // WCAG AA for normal text
+  let attempts = 0;
+  while (ratio < targetRatio && attempts < 5) {
+    // If text is too light on background, darken it; otherwise lighten it
+    const lighter = lightenHex(current, 0.05);
+    const darker = darkenHex(current, 0.05);
+    const lighterRatio = contrastRatio(lighter, bg);
+    const darkerRatio = contrastRatio(darker, bg);
+    current = lighterRatio > darkerRatio ? lighter : darker;
+    ratio = Math.max(lighterRatio, darkerRatio);
+    attempts += 1;
+  }
+  colors[fgKey] = current;
+}
+
+function contrastRatio(fgHex, bgHex) {
+  const L1 = relativeLuminance(fgHex);
+  const L2 = relativeLuminance(bgHex);
+  const light = Math.max(L1, L2);
+  const dark = Math.min(L1, L2);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+// GET /api/palette/random?mode=<mode> - generate full 17-color palette
+fastify.get('/api/palette/random', async (request) => {
+  const mode = (request.query && request.query.mode) || 'complementary';
+  const baseHue = Math.floor(Math.random() * 360);
+
+  const { primaryHue, secondaryHue, accentHue } = getModeHues(baseHue, mode);
+
+  const id = `palette-${Date.now()}`;
+  const name = `Palette ${mode} ${new Date().toLocaleTimeString()}`;
+
+  // Build light neutrals
+  const neutralHue = (baseHue + 200) % 360;
+  const light = {
+    background: hslToHex(neutralHue, 8, 96),
+    surface: hslToHex(neutralHue, 10, 94),
+    cardBg: hslToHex(neutralHue, 10, 92)
+  };
+  light.text = '#111111';
+  light.textSecondary = '#4b5563';
+  light.border = hslToHex(neutralHue, 12, 86);
+  light.cardBorder = hslToHex(neutralHue, 14, 82);
+
+  // Light primaries
+  light.primary = hslToHex(primaryHue, 70, 55);
+  light.secondary = hslToHex(secondaryHue, 70, 50);
+  light.accent = hslToHex(accentHue, 70, 50);
+
+  // Light status
+  light.success = hslToHex(140, 60, 45 + Math.random() * 10);
+  light.warning = hslToHex(35, 85, 50 + Math.random() * 5);
+  light.error = hslToHex(0, 75, 50 + Math.random() * 5);
+
+  // Build dark neutrals
+  const darkNeutralHue = (baseHue + 220) % 360;
+  const dark = {
+    background: hslToHex(darkNeutralHue, 10, 6),
+    surface: hslToHex(darkNeutralHue, 12, 10),
+    cardBg: hslToHex(darkNeutralHue, 14, 14)
+  };
+  dark.text = '#f9fafb';
+  dark.textSecondary = '#9ca3af';
+  dark.border = hslToHex(darkNeutralHue, 18, 22);
+  dark.cardBorder = hslToHex(darkNeutralHue, 22, 30);
+
+  // Dark primaries
+  dark.primary = hslToHex(primaryHue, 75, 65);
+  dark.secondary = hslToHex(secondaryHue, 75, 60);
+  dark.accent = hslToHex(accentHue, 75, 60);
+
+  // Dark status
+  dark.success = hslToHex(140, 70, 55 + Math.random() * 5);
+  dark.warning = hslToHex(40, 90, 60 + Math.random() * 5);
+  dark.error = hslToHex(0, 80, 60 + Math.random() * 5);
+
+  // Gradients derived from palette
+  const gradients = {
+    lightGradientStart: lightenHex(light.primary, 0.12),
+    lightGradientEnd: lightenHex(light.secondary, 0.05),
+    darkGradientStart: darkenHex(dark.background, 0.05),
+    darkGradientEnd: darkenHex(dark.surface, 0.05),
+    lightButtonGradientStart: lightenHex(light.primary, 0.08),
+    lightButtonGradientEnd: lightenHex(light.accent, 0.04),
+    darkButtonGradientStart: darkenHex(dark.primary, 0.06),
+    darkButtonGradientEnd: darkenHex(dark.accent, 0.04)
+  };
+
+  // Simple legibility tweak for text vs background
+  ensureContrast(light, 'text', 'background');
+  ensureContrast(dark, 'text', 'background');
+
+  return {
+    id,
+    name,
+    settings: {
+      colors: {
+        light,
+        dark,
+        gradients
+      }
+    }
+  };
+});
+
+// Save palette to main server directory as theme JSON
+fastify.post('/api/palette/save', async (request, reply) => {
+  try {
+    const palette = request.body;
+    if (
+      !palette ||
+      !palette.id ||
+      !palette.name ||
+      !palette.settings ||
+      !palette.settings.colors
+    ) {
+      return reply.status(400).send({ error: 'Invalid palette format' });
+    }
+
+    await fs.mkdir(themesColorsDir, { recursive: true });
+    const filePath = path.join(themesColorsDir, `${palette.id}.json`);
+    await fs.writeFile(filePath, JSON.stringify(palette, null, 2), 'utf-8');
+
+    return { success: true, path: filePath };
+  } catch (err) {
+    fastify.log.error(err);
+    return reply
+      .status(500)
+      .send({ error: 'Failed to save palette', details: err.message });
+  }
+});
+
+// GET /api/themes/fonts/:id - Get specific font
+fastify.get('/api/themes/fonts/:id', async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const filePath = path.join(themesFontsDir, `${id}.json`);
+    
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      const font = JSON.parse(content);
+      
+      // Validate structure
+      if (!font.id || !font.name || !font.fontFamily || font.fontWeight === undefined || !font.fontStyle) {
+        return reply.status(400).send({ error: 'Invalid font file structure.' });
+      }
+      
+      return font;
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return reply.status(404).send({ error: 'Font not found.' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error fetching font:', error);
+    reply.status(500).send({ error: 'Failed to fetch font.' });
   }
 });
 

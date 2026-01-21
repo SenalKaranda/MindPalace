@@ -1,0 +1,48 @@
+{
+  "id": "example-elegant",
+  "name": "Elegant Example",
+  "settings": {
+    "colors": {
+      "light": {
+        "primary": "#000000",
+        "secondary": "#14213d",
+        "accent": "#fca311",
+        "background": "#e5e5e5",
+        "surface": "#ffffff",
+        "cardBg": "#ffffff",
+        "text": "#000000",
+        "textSecondary": "#525252",
+        "border": "#e0e0e0",
+        "cardBorder": "#d4d4d4",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444"
+      },
+      "dark": {
+        "primary": "#ffffff",
+        "secondary": "#14213d",
+        "accent": "#fca311",
+        "background": "#0f0f0f",
+        "surface": "#1a1a1a",
+        "cardBg": "#3a3a3a",
+        "text": "#ffffff",
+        "textSecondary": "#e5e5e5",
+        "border": "#2a2a2a",
+        "cardBorder": "#4a4a4a",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444"
+      },
+      "gradients": {
+        "lightGradientStart": "#00ddeb",
+        "lightGradientEnd": "#ff6b6b",
+        "darkGradientStart": "#2e2767",
+        "darkGradientEnd": "#620808",
+        "lightButtonGradientStart": "#00ddeb",
+        "lightButtonGradientEnd": "#ff6b6b",
+        "darkButtonGradientStart": "#2e2767",
+        "darkButtonGradientEnd": "#620808"
+      }
+    }
+  }
+}

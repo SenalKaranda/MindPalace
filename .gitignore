@@ -65,6 +65,9 @@ desktop.ini
 *.backup
 *~
 
+# Designer files (unsure whether or not to deprecate this utility)
+/designer/
+
 # Package manager lock files (optional - uncomment if you want to ignore them)
 # package-lock.json
 # yarn.lock

@@ -1,0 +1,3 @@
+- Weather Widget zipcode does not update in UI until full refresh.
+- Alarms only provide 1x tone and do not repeat to alert the user.
+- UX needs tweaking, a alot of UI elements and blocks need more room to breathe (padding).

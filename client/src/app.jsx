@@ -1,6 +1,6 @@
 // client/src/app.jsx
 import React, { useState, useEffect, Suspense, lazy, useMemo, useRef } from 'react';
-import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip, CircularProgress } from '@mui/material';
+import { Container, IconButton, Box, Dialog, DialogContent, Typography, Tooltip, CircularProgress, ThemeProvider, createTheme } from '@mui/material';
 import { Brightness4, Brightness7, Lock, LockOpen } from '@mui/icons-material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -184,14 +184,19 @@ const App = () => {
   const [refreshKey, setRefreshKey] = useState(0); // Key to force widget re-renders
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isApiKeysLoading, setIsApiKeysLoading] = useState(true);
+  const [isSoftRefreshing, setIsSoftRefreshing] = useState(false);
+  const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
 
   const refreshWidgetGallery = () => {
     setWidgetGalleryKey(prev => prev + 1);
   };
 
   // Function to refresh API keys from backend
-  const refreshApiKeys = async () => {
-    setIsApiKeysLoading(true);
+  const refreshApiKeys = async (isInitialLoad = false) => {
+    // Only set loading state if this is the initial load
+    if (isInitialLoad) {
+      setIsApiKeysLoading(true);
+    }
     try {
       const response = await cachedGet('/api/settings');
       const data = response.data || response;
@@ -204,26 +209,29 @@ const App = () => {
         console.error('Response data:', error.response.data);
       }
     } finally {
-      setIsApiKeysLoading(false);
+      if (isInitialLoad) {
+        setIsApiKeysLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    refreshApiKeys();
+    refreshApiKeys(true); // Pass true to indicate this is the initial load
   }, []);
 
   // Track initial loading state
   useEffect(() => {
     // Set initial loading to false after a short delay to allow initial render
     // and after API keys are loaded
-    if (!isApiKeysLoading) {
+    if (!isApiKeysLoading && !hasCompletedInitialLoad) {
       // Small delay to ensure smooth transition
       const timer = setTimeout(() => {
         setIsInitialLoading(false);
+        setHasCompletedInitialLoad(true);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isApiKeysLoading]);
+  }, [isApiKeysLoading, hasCompletedInitialLoad]);
 
   // Initialize localStorage with defaults on first load if they don't exist
   useEffect(() => {
@@ -267,6 +275,7 @@ const App = () => {
           lightButtonGradientEnd: '#ff6b6b',
           darkButtonGradientStart: '#2e2767',
           darkButtonGradientEnd: '#620808',
+          loadingAnimationMode: 'startup',
         };
         localStorage.setItem('widgetSettings', JSON.stringify(defaultSettings));
         console.log('[App] Initialized widgetSettings in localStorage');
@@ -294,6 +303,26 @@ const App = () => {
       document.documentElement.setAttribute('data-theme', savedTheme);
       const themeSettings = loadThemeSettings();
       applyThemeSettings(themeSettings, savedTheme);
+      
+      // Load fonts after theme is applied
+      const { getAllFonts, loadGoogleFont } = require('./utils/theme.js');
+      getAllFonts().then(fonts => {
+        if (themeSettings && themeSettings.typography) {
+          const typography = themeSettings.typography;
+          if (typography.primaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.secondaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.tertiaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+        }
+      });
     } else {
       console.log('[App] Theme already applied, syncing React state only');
       setTheme(savedTheme);
@@ -302,17 +331,49 @@ const App = () => {
     setCurrentGeoPatternSeed(Math.random().toString());
     
     // Listen for theme updates from AdminPanel
-    const handleThemeUpdate = (event) => {
+    const handleThemeUpdate = async (event) => {
       console.log('[App] Theme updated event received', event.detail);
       const { theme: updatedTheme, settings } = event.detail;
       if (updatedTheme === savedTheme) {
         // Re-apply theme settings if they changed
         applyThemeSettings(settings, updatedTheme, false);
+        
+        // Load fonts when theme settings are updated
+        const { getAllFonts, loadGoogleFont } = await import('./utils/theme.js');
+        const fonts = await getAllFonts();
+        if (settings && settings.typography) {
+          const typography = settings.typography;
+          if (typography.primaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.secondaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+          if (typography.tertiaryFont) {
+            const font = fonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+            if (font && font.googleFontsUrl) loadGoogleFont(font);
+          }
+        }
+        
+        // Force a re-render to update MUI theme (CSS variables are evaluated at render time)
+        window.dispatchEvent(new CustomEvent('themeSettingsUpdated'));
       }
     };
     
     window.addEventListener('themeUpdated', handleThemeUpdate);
     return () => window.removeEventListener('themeUpdated', handleThemeUpdate);
+  }, []);
+  
+  // Listen for theme settings updates to force re-render
+  const [themeUpdateKey, setThemeUpdateKey] = useState(0);
+  useEffect(() => {
+    const handleThemeSettingsUpdate = () => {
+      setThemeUpdateKey(prev => prev + 1);
+    };
+    window.addEventListener('themeSettingsUpdated', handleThemeSettingsUpdate);
+    return () => window.removeEventListener('themeSettingsUpdated', handleThemeSettingsUpdate);
   }, []);
 
   useEffect(() => {
@@ -382,7 +443,7 @@ const App = () => {
     }
   }, [showAdminPanel]);
 
-  const toggleTheme = () => {
+  const toggleTheme = async () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
@@ -391,6 +452,28 @@ const App = () => {
     // Apply theme settings for the new theme
     const themeSettings = loadThemeSettings();
     applyThemeSettings(themeSettings, newTheme);
+    
+    // Load fonts when theme is toggled
+    const { getAllFonts, loadGoogleFont } = await import('./utils/theme.js');
+    const fonts = await getAllFonts();
+    if (themeSettings && themeSettings.typography) {
+      const typography = themeSettings.typography;
+      if (typography.primaryFont) {
+        const font = fonts.find(f => f.fontFamily === typography.primaryFont || f.id === typography.primaryFont);
+        if (font && font.googleFontsUrl) loadGoogleFont(font);
+      }
+      if (typography.secondaryFont) {
+        const font = fonts.find(f => f.fontFamily === typography.secondaryFont || f.id === typography.secondaryFont);
+        if (font && font.googleFontsUrl) loadGoogleFont(font);
+      }
+      if (typography.tertiaryFont) {
+        const font = fonts.find(f => f.fontFamily === typography.tertiaryFont || f.id === typography.tertiaryFont);
+        if (font && font.googleFontsUrl) loadGoogleFont(font);
+      }
+    }
+    
+    // Dispatch custom event to notify AdminPanel
+    window.dispatchEvent(new CustomEvent('themeToggled', { detail: { theme: newTheme } }));
   };
 
   const toggleWidgetsLock = () => {
@@ -418,13 +501,14 @@ const App = () => {
   // Soft refresh - clears cache and refetches data without page reload
   const handleSoftRefresh = async () => {
     setIsRefreshing(true);
+    setIsSoftRefreshing(true);
     try {
       // Clear API cache to force fresh data
       const { clearCache } = await import('./utils/api.js');
       clearCache();
       
-      // Refresh API keys
-      await refreshApiKeys();
+      // Refresh API keys (not initial load, so don't show loading overlay unless mode is 'all')
+      await refreshApiKeys(false);
       
       // Trigger a re-render by updating a state that widgets can listen to
       // This will cause widgets to refetch their data
@@ -438,6 +522,10 @@ const App = () => {
       console.error('Error during soft refresh:', error);
     } finally {
       setIsRefreshing(false);
+      // Small delay before hiding soft refresh overlay to ensure smooth transition
+      setTimeout(() => {
+        setIsSoftRefreshing(false);
+      }, 300);
     }
   };
 
@@ -610,23 +698,10 @@ const App = () => {
       if (widgetSettings.alarms?.enabled) {
         const widgetId = 'alarms-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(4, 4, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 4,
-              h: 4
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 4, height: 4 },
           minWidth: 3,
           minHeight: 2,
@@ -641,23 +716,10 @@ const App = () => {
       if (widgetSettings.houseRules?.enabled) {
         const widgetId = 'house-rules-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(4, 4, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 4,
-              h: 4
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 4, height: 4 },
           minWidth: 3,
           minHeight: 2,
@@ -672,23 +734,10 @@ const App = () => {
       if (widgetSettings.marbles?.enabled) {
         const widgetId = 'marbles-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 4,
-              h: 5
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
@@ -703,23 +752,10 @@ const App = () => {
       if (widgetSettings.groceryList?.enabled) {
         const widgetId = 'grocery-list-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 4,
-              h: 5
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
@@ -734,23 +770,10 @@ const App = () => {
       if (widgetSettings.mealPlanner?.enabled) {
         const widgetId = 'meal-planner-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(6, 5, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 6,
-              h: 5
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 6, height: 5 },
           minWidth: 4,
           minHeight: 4,
@@ -765,23 +788,10 @@ const App = () => {
       if (widgetSettings.mealSuggestionBox?.enabled) {
         const widgetId = 'meal-suggestion-box-widget';
         const savedLayout = localStorage.getItem(`widget-layout-${widgetId}`);
-        let position = null;
         
-        if (!savedLayout) {
-          position = findNearestOpenSpace(4, 5, widgetArray);
-          if (position) {
-            localStorage.setItem(`widget-layout-${widgetId}`, JSON.stringify({
-              x: position.x,
-              y: position.y,
-              w: 4,
-              h: 5
-            }));
-          }
-        }
-
         widgetArray.push({
           id: widgetId,
-          defaultPosition: position || null,
+          defaultPosition: savedLayout ? JSON.parse(savedLayout) : null,
           defaultSize: { width: 4, height: 5 },
           minWidth: 3,
           minHeight: 3,
@@ -801,11 +811,148 @@ const App = () => {
     return widgetArray;
   }, [widgetSettings, apiKeys]);
 
-  // Determine if we should show the loading overlay
-  const showLoadingOverlay = isInitialLoading || isApiKeysLoading;
+  // Initialize layout positions for newly enabled widgets (runs after widgets array is built)
+  useEffect(() => {
+    if (!widgets || widgets.length === 0) return;
+
+    widgets.forEach((widget) => {
+      if (!widget || !widget.id) return;
+      
+      const savedLayout = localStorage.getItem(`widget-layout-${widget.id}`);
+      if (!savedLayout && widget.defaultPosition === null) {
+        // Widget is newly enabled and has no saved layout - find open space
+        const existingWidgets = widgets
+          .filter(w => w.id !== widget.id && localStorage.getItem(`widget-layout-${w.id}`))
+          .map(w => {
+            const layout = JSON.parse(localStorage.getItem(`widget-layout-${w.id}`));
+            return {
+              x: layout.x,
+              y: layout.y,
+              w: layout.w,
+              h: layout.h
+            };
+          });
+        
+        const position = findNearestOpenSpace(
+          widget.defaultSize.width,
+          widget.defaultSize.height,
+          existingWidgets
+        );
+        
+        if (position) {
+          localStorage.setItem(`widget-layout-${widget.id}`, JSON.stringify({
+            x: position.x,
+            y: position.y,
+            w: widget.defaultSize.width,
+            h: widget.defaultSize.height
+          }));
+        }
+      }
+    });
+  }, [widgets]);
+
+  // Determine if we should show the loading overlay based on mode
+  const loadingAnimationMode = widgetSettings.loadingAnimationMode || 'startup';
+  const shouldShowOnStartup = loadingAnimationMode === 'startup' || loadingAnimationMode === 'all';
+  const shouldShowOnRefresh = loadingAnimationMode === 'all';
+  const isDisabled = loadingAnimationMode === 'disabled';
+  
+  // Show overlay only during initial load when mode is 'startup' or 'all'
+  // Show overlay during soft refresh only when mode is 'all'
+  const showLoadingOverlay = !isDisabled && (
+    (shouldShowOnStartup && !hasCompletedInitialLoad && (isInitialLoading || isApiKeysLoading)) ||
+    (shouldShowOnRefresh && isSoftRefreshing)
+  );
+
+  // Create MUI theme that uses CSS variables for fonts
+  // The theme uses CSS variables which are evaluated at render time, so it will automatically pick up changes
+  // We include themeUpdateKey to force theme recreation when fonts change
+  const muiTheme = useMemo(() => {
+    return createTheme({
+      typography: {
+        fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+        h1: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        h2: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        h3: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        h4: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        h5: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        h6: { fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        body1: { fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        body2: { fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        subtitle1: { fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        subtitle2: { fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        caption: { fontFamily: 'var(--font-family-tertiary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+        button: { fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif' },
+      },
+      components: {
+        MuiTypography: {
+          styleOverrides: {
+            root: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h1: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h2: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h3: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h4: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h5: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            h6: {
+              fontFamily: 'var(--font-family-secondary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            body1: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            body2: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            caption: {
+              fontFamily: 'var(--font-family-tertiary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            subtitle1: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+            subtitle2: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+          },
+        },
+        MuiButton: {
+          styleOverrides: {
+            root: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+          },
+        },
+        MuiInputLabel: {
+          styleOverrides: {
+            root: {
+              fontFamily: 'var(--font-family-tertiary, var(--font-family-primary, Inter)), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+          },
+        },
+        MuiChip: {
+          styleOverrides: {
+            root: {
+              fontFamily: 'var(--font-family-primary, Inter), -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+            },
+          },
+        },
+      },
+    });
+  }, [themeUpdateKey]); // Recreate when theme settings change
 
   return (
-    <ErrorBoundary>
+    <ThemeProvider theme={muiTheme}>
+      <ErrorBoundary>
       {/* Loading Overlay */}
       <LoadingOverlay 
         open={showLoadingOverlay}
@@ -1130,7 +1277,8 @@ const App = () => {
           </Tooltip>
         </Box>
       </Box>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </ThemeProvider>
   );
 };
 

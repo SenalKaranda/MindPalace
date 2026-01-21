@@ -1,0 +1,48 @@
+{
+  "id": "palette-1768972635865",
+  "name": "Greenie Meanie",
+  "settings": {
+    "colors": {
+      "light": {
+        "background": "#f4f6f4",
+        "surface": "#eef1ee",
+        "cardBg": "#e9ede9",
+        "text": "#111111",
+        "textSecondary": "#4b5563",
+        "border": "#d8e0d7",
+        "cardBorder": "#ccd8cb",
+        "primary": "#973cdd",
+        "secondary": "#74d926",
+        "accent": "#cdd926",
+        "success": "#3ace6b",
+        "warning": "#ed9820",
+        "error": "#e12f2f"
+      },
+      "dark": {
+        "background": "#0e110e",
+        "surface": "#161d18",
+        "cardBg": "#1f2921",
+        "text": "#f9fafb",
+        "textSecondary": "#9ca3af",
+        "border": "#2e4233",
+        "cardBorder": "#3c5d44",
+        "primary": "#af63e9",
+        "secondary": "#8fe64c",
+        "accent": "#dbe64c",
+        "success": "#47df79",
+        "warning": "#f6c055",
+        "error": "#ec5151"
+      },
+      "gradients": {
+        "lightGradientStart": "#b370e6",
+        "lightGradientEnd": "#82dd3c",
+        "darkGradientStart": "#020302",
+        "darkGradientEnd": "#0b0f0c",
+        "lightButtonGradientStart": "#aa5fe3",
+        "lightButtonGradientEnd": "#d1dc37",
+        "darkButtonGradientStart": "#a148e5",
+        "darkButtonGradientEnd": "#d7e43a"
+      }
+    }
+  }
+}

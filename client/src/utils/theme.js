@@ -47,7 +47,9 @@ export const defaultThemeSettings = {
     }
   },
   typography: {
-    fontFamily: 'Inter',
+    primaryFont: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+    secondaryFont: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+    tertiaryFont: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
     baseFontSize: 16,
     lineHeight: 1.5,
     letterSpacing: -0.01,
@@ -89,6 +91,18 @@ export const loadThemeSettings = () => {
     const saved = localStorage.getItem('themeSettings');
     if (saved) {
       const parsed = JSON.parse(saved);
+      
+      // Migrate old fontFamily to primaryFont if needed
+      if (parsed.typography && parsed.typography.fontFamily && !parsed.typography.primaryFont) {
+        parsed.typography.primaryFont = parsed.typography.fontFamily;
+        parsed.typography.secondaryFont = parsed.typography.secondaryFont || parsed.typography.fontFamily;
+        parsed.typography.tertiaryFont = parsed.typography.tertiaryFont || parsed.typography.fontFamily;
+        // Remove old fontFamily
+        delete parsed.typography.fontFamily;
+        // Save migrated settings
+        saveThemeSettings(parsed);
+      }
+      
       // Merge with defaults to ensure all properties exist
       const merged = deepMerge(defaultThemeSettings, parsed);
       console.log('[Theme] Loaded theme settings from localStorage:', merged);
@@ -188,11 +202,23 @@ export const applyThemeSettings = (settings, currentTheme = 'light', isPreview =
   root.style.setProperty('--dark-button-gradient-end', gradients.darkButtonGradientEnd);
 
   // Apply typography variables
-  root.style.setProperty('--font-family', settings.typography.fontFamily);
-  root.style.setProperty('--base-font-size', `${settings.typography.baseFontSize}px`);
-  root.style.setProperty('--line-height', settings.typography.lineHeight);
-  root.style.setProperty('--letter-spacing', `${settings.typography.letterSpacing}em`);
-  root.style.setProperty('--font-weight', settings.typography.fontWeight);
+  const typography = settings.typography || defaultThemeSettings.typography;
+  
+  // Set primary, secondary, and tertiary font families
+  // Primary font is used for body text and general UI
+  // Secondary font is used for headings and emphasis
+  // Tertiary font is used for captions, labels, and small text
+  root.style.setProperty('--font-family-primary', typography.primaryFont || 'Inter');
+  root.style.setProperty('--font-family-secondary', typography.secondaryFont || 'Inter');
+  root.style.setProperty('--font-family-tertiary', typography.tertiaryFont || 'Inter');
+  
+  // Legacy support: set --font-family to primary font for backward compatibility
+  root.style.setProperty('--font-family', typography.primaryFont || 'Inter');
+  
+  root.style.setProperty('--base-font-size', `${typography.baseFontSize || 16}px`);
+  root.style.setProperty('--line-height', typography.lineHeight || 1.5);
+  root.style.setProperty('--letter-spacing', `${typography.letterSpacing || -0.01}em`);
+  root.style.setProperty('--font-weight', typography.fontWeight || 400);
 
   // Apply spacing variables
   Object.entries(settings.spacing).forEach(([key, value]) => {
@@ -251,7 +277,50 @@ export const applyThemeSettings = (settings, currentTheme = 'light', isPreview =
   const verifyText = root.style.getPropertyValue('--text');
   const verifyBackground = root.style.getPropertyValue('--background');
   const verifyCardBg = root.style.getPropertyValue('--card-bg');
+  const verifyPrimaryFont = root.style.getPropertyValue('--font-family-primary');
+  const verifySecondaryFont = root.style.getPropertyValue('--font-family-secondary');
+  const verifyTertiaryFont = root.style.getPropertyValue('--font-family-tertiary');
   console.log('[Theme] Applied CSS variables - text:', verifyText, 'background:', verifyBackground, 'card-bg:', verifyCardBg);
+  console.log('[Theme] Font variables - Primary:', verifyPrimaryFont, 'Secondary:', verifySecondaryFont, 'Tertiary:', verifyTertiaryFont);
+  
+  // Load Google Fonts for all three font families if they're custom fonts
+  // Load fonts asynchronously to avoid blocking - use setTimeout to ensure getAllFonts is available
+  setTimeout(() => {
+    getAllFonts().then(fonts => {
+      console.log('[Theme] Available fonts:', fonts.map(f => ({ id: f.id, name: f.name, fontFamily: f.fontFamily })));
+      
+      const loadFont = (fontValue, fontType) => {
+        if (!fontValue) return;
+        
+        // Try to find font by exact fontFamily match first, then by id
+        let font = fonts.find(f => f.fontFamily === fontValue);
+        if (!font) {
+          // Try matching by id
+          font = fonts.find(f => f.id === fontValue);
+        }
+        if (!font) {
+          // Try matching by extracting font name from fontFamily string
+          const fontName = fontValue.split(',')[0].trim().replace(/['"]/g, '');
+          font = fonts.find(f => f.name === fontName || f.id === fontName.toLowerCase().replace(/\s+/g, '-'));
+        }
+        
+        if (font && font.googleFontsUrl) {
+          loadGoogleFont(font);
+          console.log(`[Theme] Loaded ${fontType} font:`, font.name, 'from', fontValue);
+        } else if (font) {
+          console.log(`[Theme] ${fontType} font "${fontValue}" is a system font, no Google Fonts URL needed`);
+        } else {
+          console.warn(`[Theme] Could not find font for ${fontType}:`, fontValue);
+        }
+      };
+      
+      loadFont(typography.primaryFont, 'primary');
+      loadFont(typography.secondaryFont, 'secondary');
+      loadFont(typography.tertiaryFont, 'tertiary');
+    }).catch(err => {
+      console.error('[Theme] Error loading fonts:', err);
+    });
+  }, 0);
 };
 
 /**
@@ -290,11 +359,8 @@ export const themePresets = {
   ocean: {
     name: 'Ocean',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#0284c7',
           secondary: '#06b6d4',
           accent: '#0891b2',
@@ -305,9 +371,11 @@ export const themePresets = {
           textSecondary: '#6b6b6b',
           border: '#bfdbfe',
           cardBorder: '#93c5fd',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#38bdf8',
           secondary: '#06b6d4',
           accent: '#22d3ee',
@@ -318,18 +386,32 @@ export const themePresets = {
           textSecondary: '#e2e8f0',
           border: '#1e293b',
           cardBorder: '#64748b',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
+        gradients: {
+          lightGradientStart: '#0ea5e9',
+          lightGradientEnd: '#22c55e',
+          darkGradientStart: '#0f172a',
+          darkGradientEnd: '#1e293b',
+          lightButtonGradientStart: '#0ea5e9',
+          lightButtonGradientEnd: '#22c55e',
+          darkButtonGradientStart: '#0f172a',
+          darkButtonGradientEnd: '#1e293b',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
   forest: {
     name: 'Forest',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#15803d',
           secondary: '#22c55e',
           accent: '#65a30d',
@@ -340,9 +422,11 @@ export const themePresets = {
           textSecondary: '#6b6b6b',
           border: '#bbf7d0',
           cardBorder: '#86efac',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#4ade80',
           secondary: '#22c55e',
           accent: '#84cc16',
@@ -353,18 +437,32 @@ export const themePresets = {
           textSecondary: '#d1fae5',
           border: '#1a2e1f',
           cardBorder: '#3d5a4a',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
+        gradients: {
+          lightGradientStart: '#22c55e',
+          lightGradientEnd: '#65a30d',
+          darkGradientStart: '#14532d',
+          darkGradientEnd: '#166534',
+          lightButtonGradientStart: '#22c55e',
+          lightButtonGradientEnd: '#65a30d',
+          darkButtonGradientStart: '#14532d',
+          darkButtonGradientEnd: '#166534',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
   sunset: {
     name: 'Sunset',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#ea580c',
           secondary: '#f97316',
           accent: '#dc2626',
@@ -375,9 +473,11 @@ export const themePresets = {
           textSecondary: '#6b6b6b',
           border: '#fed7aa',
           cardBorder: '#fdba74',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#fb923c',
           secondary: '#f97316',
           accent: '#f87171',
@@ -388,18 +488,32 @@ export const themePresets = {
           textSecondary: '#fef3c7',
           border: '#292524',
           cardBorder: '#4a4438',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
+        gradients: {
+          lightGradientStart: '#f97316',
+          lightGradientEnd: '#ec4899',
+          darkGradientStart: '#7c2d12',
+          darkGradientEnd: '#4a044e',
+          lightButtonGradientStart: '#f97316',
+          lightButtonGradientEnd: '#ec4899',
+          darkButtonGradientStart: '#7c2d12',
+          darkButtonGradientEnd: '#4a044e',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
   midnight: {
     name: 'Midnight',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#6366f1',
           secondary: '#8b5cf6',
           accent: '#9333ea',
@@ -410,9 +524,11 @@ export const themePresets = {
           textSecondary: '#6b6b6b',
           border: '#e9d5ff',
           cardBorder: '#d8b4fe',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#818cf8',
           secondary: '#a78bfa',
           accent: '#c084fc',
@@ -423,18 +539,32 @@ export const themePresets = {
           textSecondary: '#e9d5ff',
           border: '#1a1a2e',
           cardBorder: '#3d3a5e',
+          success: '#10b981',
+          warning: '#f59e0b',
+          error: '#ef4444',
         },
+        gradients: {
+          lightGradientStart: '#4f46e5',
+          lightGradientEnd: '#ec4899',
+          darkGradientStart: '#020617',
+          darkGradientEnd: '#172554',
+          lightButtonGradientStart: '#4f46e5',
+          lightButtonGradientEnd: '#ec4899',
+          darkButtonGradientStart: '#020617',
+          darkButtonGradientEnd: '#172554',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
   minimal: {
     name: 'Minimal',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#525252',
           secondary: '#737373',
           accent: '#a3a3a3',
@@ -445,9 +575,11 @@ export const themePresets = {
           textSecondary: '#525252',
           border: '#e5e5e5',
           cardBorder: '#d4d4d4',
+          success: '#16a34a',
+          warning: '#f97316',
+          error: '#dc2626',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#a3a3a3',
           secondary: '#d4d4d4',
           accent: '#e5e5e5',
@@ -458,18 +590,32 @@ export const themePresets = {
           textSecondary: '#e5e5e5',
           border: '#262626',
           cardBorder: '#404040',
+          success: '#22c55e',
+          warning: '#f97316',
+          error: '#f97373',
         },
+        gradients: {
+          lightGradientStart: '#e5e5e5',
+          lightGradientEnd: '#ffffff',
+          darkGradientStart: '#0a0a0a',
+          darkGradientEnd: '#262626',
+          lightButtonGradientStart: '#e5e5e5',
+          lightButtonGradientEnd: '#ffffff',
+          darkButtonGradientStart: '#0a0a0a',
+          darkButtonGradientEnd: '#262626',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
   vibrant: {
     name: 'Vibrant',
     settings: {
-      ...defaultThemeSettings,
       colors: {
-        ...defaultThemeSettings.colors,
         light: {
-          ...defaultThemeSettings.colors.light,
           primary: '#db2777',
           secondary: '#f59e0b',
           accent: '#10b981',
@@ -480,9 +626,11 @@ export const themePresets = {
           textSecondary: '#6b6b6b',
           border: '#fde68a',
           cardBorder: '#fcd34d',
+          success: '#16a34a',
+          warning: '#f97316',
+          error: '#dc2626',
         },
         dark: {
-          ...defaultThemeSettings.colors.dark,
           primary: '#f472b6',
           secondary: '#fbbf24',
           accent: '#34d399',
@@ -493,8 +641,25 @@ export const themePresets = {
           textSecondary: '#fef3c7',
           border: '#252320',
           cardBorder: '#4a4438',
+          success: '#22c55e',
+          warning: '#fbbf24',
+          error: '#f97373',
         },
+        gradients: {
+          lightGradientStart: '#db2777',
+          lightGradientEnd: '#f97316',
+          darkGradientStart: '#4a044e',
+          darkGradientEnd: '#b45309',
+          lightButtonGradientStart: '#db2777',
+          lightButtonGradientEnd: '#f97316',
+          darkButtonGradientStart: '#4a044e',
+          darkButtonGradientEnd: '#b45309',
+        }
       },
+      typography: { ...defaultThemeSettings.typography },
+      spacing: { ...defaultThemeSettings.spacing },
+      borders: { ...defaultThemeSettings.borders },
+      shadows: { ...defaultThemeSettings.shadows },
     },
   },
 };
@@ -531,5 +696,157 @@ export const importThemeSettings = (file) => {
     };
     reader.onerror = () => reject(new Error('Error reading file'));
     reader.readAsText(file);
+  });
+};
+
+/**
+ * Fetch custom color themes from server
+ */
+export const fetchCustomColorThemes = async () => {
+  try {
+    const { getApiUrl } = await import('./api.js');
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/api/themes/colors`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch custom color themes');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching custom color themes:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch custom fonts from server
+ */
+export const fetchCustomFonts = async () => {
+  try {
+    const { getApiUrl } = await import('./api.js');
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/api/themes/fonts`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch custom fonts');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching custom fonts:', error);
+    return [];
+  }
+};
+
+/**
+ * Get all themes (built-in + custom)
+ */
+export const getAllThemes = async () => {
+  const customThemes = await fetchCustomColorThemes();
+  const allThemes = { ...themePresets };
+  
+  // Add custom themes with 'custom-' prefix to avoid conflicts
+  customThemes.forEach(theme => {
+    allThemes[`custom-${theme.id}`] = {
+      id: theme.id,
+      name: theme.name,
+      settings: theme.settings,
+      isCustom: true
+    };
+  });
+  
+  return allThemes;
+};
+
+/**
+ * Built-in fonts list
+ * Note: fontFamily values should match what's stored in themeSettings.typography.fontFamily
+ * Custom fonts from JSON files will have full fontFamily like "Roboto, sans-serif"
+ */
+export const builtInFonts = [
+  { 
+    id: 'inter', 
+    name: 'Inter', 
+    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
+  },
+  { 
+    id: 'roboto', 
+    name: 'Roboto', 
+    fontFamily: 'Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap'
+  },
+  { 
+    id: 'open-sans', 
+    name: 'Open Sans', 
+    fontFamily: '"Open Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap'
+  },
+  { 
+    id: 'system', 
+    name: 'System UI', 
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+    googleFontsUrl: ''
+  },
+];
+
+/**
+ * Get all fonts for the main app
+ * - When server returns fonts (including Google Fonts + custom), use those.
+ * - When server returns nothing or fails, fall back to a small built-in list.
+ */
+export const getAllFonts = async () => {
+  try {
+    const customFonts = await fetchCustomFonts();
+
+    // If server returned fonts (Google + custom), prefer those
+    if (Array.isArray(customFonts) && customFonts.length > 0) {
+      // Mark them as custom for UI purposes and return
+      return customFonts.map(font => ({ ...font, isCustom: true }));
+    }
+
+    // Fallback: no server fonts available, use built-in fonts
+    console.warn(
+      '[Theme] No fonts returned from /api/themes/fonts, falling back to built-in fonts'
+    );
+    return builtInFonts;
+  } catch (error) {
+    console.error('[Theme] Error fetching fonts from /api/themes/fonts:', error);
+    return builtInFonts;
+  }
+};
+
+/**
+ * Load Google Font dynamically (supports multiple fonts)
+ */
+export const loadGoogleFont = (font) => {
+  if (!font || !font.googleFontsUrl) {
+    return;
+  }
+  
+  // Check if this font is already loaded
+  const fontId = font.id || font.name || 'font';
+  const existingLink = document.querySelector(`link[data-google-font="${fontId}"]`);
+  if (existingLink) {
+    return; // Font already loaded
+  }
+  
+  // Create new link element
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = font.googleFontsUrl;
+  link.setAttribute('data-google-font', fontId);
+  document.head.appendChild(link);
+};
+
+/**
+ * Load multiple Google Fonts (for primary, secondary, tertiary)
+ */
+export const loadGoogleFonts = (fonts) => {
+  if (!fonts || !Array.isArray(fonts)) {
+    return;
+  }
+  
+  fonts.forEach(font => {
+    if (font && font.googleFontsUrl) {
+      loadGoogleFont(font);
+    }
   });
 };

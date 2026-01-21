@@ -63,8 +63,12 @@ const ChoreWidget = ({ transparentBackground }) => {
   const [purchasingPrize, setPurchasingPrize] = useState(null);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
   const [purchasedPrize, setPurchasedPrize] = useState(null);
-  const [prizeMinimumShells, setPrizeMinimumShells] = useState(0);
-  const [bonusChoreClamValue, setBonusChoreClamValue] = useState(1);
+  const [prizeMinimumCurrency, setPrizeMinimumCurrency] = useState(0);
+  const [bonusChoreCurrencyValue, setBonusChoreCurrencyValue] = useState(1);
+  const [dailyChoresCompletionBonus, setDailyChoresCompletionBonus] = useState(2);
+  const [currencyName, setCurrencyName] = useState('Clam');
+  const [currencyNamePlural, setCurrencyNamePlural] = useState('Clams');
+  const [currencyEmoji, setCurrencyEmoji] = useState('🥟');
   const [showBonusChoreDialog, setShowBonusChoreDialog] = useState(false);
   const [newBonusChore, setNewBonusChore] = useState({
     title: '',
@@ -85,8 +89,10 @@ const ChoreWidget = ({ transparentBackground }) => {
     fetchUsers();
     fetchChores();
     fetchPrizes();
-    fetchPrizeMinimumShells();
-    fetchBonusChoreClamValue();
+    fetchPrizeMinimumCurrency();
+    fetchBonusChoreCurrencyValue();
+    fetchDailyChoresCompletionBonus();
+    fetchCurrencySettings();
   }, []);
 
   // Listen for soft refresh events
@@ -96,34 +102,71 @@ const ChoreWidget = ({ transparentBackground }) => {
       fetchUsers();
       fetchChores();
       fetchPrizes();
-      fetchPrizeMinimumShells();
-      fetchBonusChoreClamValue();
+      fetchPrizeMinimumCurrency();
+      fetchBonusChoreCurrencyValue();
+      fetchDailyChoresCompletionBonus();
+      fetchCurrencySettings();
     };
 
     window.addEventListener('softRefresh', handleSoftRefresh);
     return () => window.removeEventListener('softRefresh', handleSoftRefresh);
   }, []);
 
-  const fetchPrizeMinimumShells = async () => {
+  const fetchPrizeMinimumCurrency = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_SHELLS`);
-      setPrizeMinimumShells(response.data.value || 0);
+      const response = await axios.get(`${getApiUrl()}/api/settings/PRIZE_MINIMUM_CURRENCY`);
+      setPrizeMinimumCurrency(response.data.value || 0);
     } catch (error) {
-      console.error('Error fetching minimum shells setting:', error);
-      setPrizeMinimumShells(0);
+      console.error('Error fetching minimum currency setting:', error);
+      setPrizeMinimumCurrency(0);
     }
   };
 
-  const fetchBonusChoreClamValue = async () => {
+  const fetchBonusChoreCurrencyValue = async () => {
     try {
-      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CLAM_VALUE`);
-      setBonusChoreClamValue(response.data.value ? parseInt(response.data.value) : 1);
+      const response = await axios.get(`${getApiUrl()}/api/settings/BONUS_CHORE_CURRENCY_VALUE`);
+      setBonusChoreCurrencyValue(response.data.value ? parseInt(response.data.value) : 1);
     } catch (error) {
       // 404 is expected if the setting doesn't exist yet - use default value
       if (error.response?.status !== 404) {
-        console.error('Error fetching bonus chore clam value setting:', error);
+        console.error('Error fetching bonus chore currency value setting:', error);
       }
-      setBonusChoreClamValue(1);
+      setBonusChoreCurrencyValue(1);
+    }
+  };
+
+  const fetchDailyChoresCompletionBonus = async () => {
+    try {
+      const response = await axios.get(`${getApiUrl()}/api/settings/DAILY_CHORES_COMPLETION_BONUS`);
+      // Properly handle 0 as a valid value (check for null/undefined, not falsy)
+      const value = response.data?.value;
+      const parsedValue = value !== null && value !== undefined ? parseInt(value) : null;
+      setDailyChoresCompletionBonus((parsedValue !== null && !isNaN(parsedValue)) ? parsedValue : 2);
+    } catch (error) {
+      // 404 is expected if the setting doesn't exist yet - use default value
+      if (error.response?.status !== 404) {
+        console.error('Error fetching daily chores completion bonus setting:', error);
+      }
+      setDailyChoresCompletionBonus(2);
+    }
+  };
+
+  const fetchCurrencySettings = async () => {
+    try {
+      const [singularRes, pluralRes, emojiRes] = await Promise.all([
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_NAME_SINGULAR`),
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_NAME_PLURAL`),
+        axios.get(`${getApiUrl()}/api/settings/CURRENCY_EMOJI`)
+      ]);
+      setCurrencyName(singularRes.data.value || 'Clam');
+      setCurrencyNamePlural(pluralRes.data.value || 'Clams');
+      setCurrencyEmoji(emojiRes.data.value || '🥟');
+    } catch (error) {
+      console.error('Error fetching currency settings:', error);
+      // Use defaults
+      setCurrencyName('Clam');
+      setCurrencyNamePlural('Clams');
+      setCurrencyEmoji('🥟');
     }
   };
 
@@ -229,21 +272,21 @@ const ChoreWidget = ({ transparentBackground }) => {
             if (isNaN(userId)) userId = 0;
           }
           
-          // Normalize clam_value
-          const clamValue = Number(chore.clam_value) || 0;
+          // Normalize currency_value (support both for backward compatibility)
+          const currencyValue = Number(chore.currency_value !== undefined ? chore.currency_value : chore.clam_value) || 0;
           
           return {
             ...chore,
             user_id: userId,
-            clam_value: clamValue
+            currency_value: currencyValue
           };
         });
         
         console.log('Fetched chores:', normalizedChores);
-        console.log('Chores with clam_value > 0:', normalizedChores.filter(c => c.clam_value > 0));
+        console.log('Chores with currency_value > 0:', normalizedChores.filter(c => c.currency_value > 0));
         console.log('Chores with user_id === 0:', normalizedChores.filter(c => c.user_id === 0));
-        console.log('Bonus chores (clam_value > 0 AND user_id === 0):', 
-          normalizedChores.filter(c => c.clam_value > 0 && c.user_id === 0));
+        console.log('Bonus chores (currency_value > 0 AND user_id === 0):', 
+          normalizedChores.filter(c => c.currency_value > 0 && c.user_id === 0));
         setChores(normalizedChores);
       } else {
         console.error('Invalid chores response:', response.data);
@@ -324,7 +367,7 @@ const ChoreWidget = ({ transparentBackground }) => {
           time_period: 'any-time',
           assigned_days_of_week: ['monday'],
           repeat_type: 'weekly',
-          clam_value: 0
+          currency_value: 0
         });
         setShowAddDialog(false);
       }
@@ -347,7 +390,7 @@ const ChoreWidget = ({ transparentBackground }) => {
         user_id: 0, // Always unassigned (bonus user)
         assigned_day_of_week: 'any', // Special value to indicate available any day
         repeat_type: 'weekly', // Default repeat type
-        clam_value: bonusChoreClamValue
+        currency_value: bonusChoreCurrencyValue
       };
       await post('/api/chores', bonusChore);
       setNewBonusChore({
@@ -391,18 +434,18 @@ const ChoreWidget = ({ transparentBackground }) => {
     // Since chores are already normalized in fetchChores, we can use them directly
     // But we'll still check to be safe
     const bonusChores = chores.filter(chore => {
-      // Use the normalized clam_value (already a number from fetchChores)
-      const clamValue = typeof chore.clam_value === 'number' ? chore.clam_value : (Number(chore.clam_value) || 0);
-      return clamValue > 0;
+      // Use the normalized currency_value (already a number from fetchChores)
+      const currencyValue = typeof chore.currency_value === 'number' ? chore.currency_value : (Number(chore.currency_value) || 0);
+      return currencyValue > 0;
     });
-    console.log('All bonus chores (clam_value > 0):', bonusChores);
+    console.log('All bonus chores (currency_value > 0):', bonusChores);
     console.log('Bonus chores details:', bonusChores.map(c => ({ 
       id: c.id, 
       title: c.title, 
       user_id: c.user_id, 
       user_id_type: typeof c.user_id,
-      clam_value: c.clam_value,
-      clam_value_type: typeof c.clam_value
+      currency_value: c.currency_value,
+      currency_value_type: typeof c.currency_value
     })));
     return bonusChores;
   };
@@ -431,14 +474,21 @@ const ChoreWidget = ({ transparentBackground }) => {
   const getAffordablePrizes = (userId) => {
     const user = users.find(u => u.id === userId);
     if (!user) return [];
-    return prizes.filter(prize => user.clam_total >= prize.clam_cost);
+    const userCurrency = user.currency_total || user.clam_total || 0;
+    const prizeCost = prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0);
+    return prizes.filter(prize => {
+      const cost = prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0);
+      return userCurrency >= cost;
+    });
   };
 
   const canUserPurchase = (userId, prizeId) => {
     const user = users.find(u => u.id === userId);
     const prize = prizes.find(p => p.id === prizeId);
     if (!user || !prize) return false;
-    return user.clam_total >= prize.clam_cost;
+    const userCurrency = user.currency_total || user.clam_total || 0;
+    const prizeCost = prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0);
+    return userCurrency >= prizeCost;
   };
 
   // Empty function for post-purchase actions (to be implemented by user)
@@ -460,7 +510,8 @@ const ChoreWidget = ({ transparentBackground }) => {
     }
 
     if (!canUserPurchase(selectedUserForPrize, prizeId)) {
-      alert(`Not enough shells! This prize costs ${prize.clam_cost} 🥟`);
+      const prizeCost = prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0);
+      alert(`Not enough ${currencyNamePlural.toLowerCase()}! This prize costs ${prizeCost} ${currencyEmoji}`);
       return;
     }
 
@@ -563,7 +614,7 @@ const ChoreWidget = ({ transparentBackground }) => {
         )}
         
         <Chip
-          label={`${user.clam_total || 0} 🥟`}
+          label={`${user.currency_total || user.clam_total || 0} ${currencyEmoji}`}
           size="small"
           sx={{
             position: 'absolute',
@@ -583,9 +634,9 @@ const ChoreWidget = ({ transparentBackground }) => {
   };
 
   const renderChoreItem = (chore, isEditing = false) => {
-    // For bonus chores (clam_value > 0), show "Any Day" or hide day chip
+    // For bonus chores (currency_value > 0), show "Any Day" or hide day chip
     // For regular chores, show the specific day
-    const isBonusChore = chore.clam_value > 0;
+    const isBonusChore = (chore.currency_value || chore.clam_value || 0) > 0;
     const dayName = isBonusChore 
       ? (chore.assigned_day_of_week === 'any' ? 'Any Day' : '')
       : (chore.assigned_day_of_week 
@@ -624,9 +675,9 @@ const ChoreWidget = ({ transparentBackground }) => {
                 }}
               />
             )}
-            {chore.clam_value > 0 && (
+            {(chore.currency_value || chore.clam_value || 0) > 0 && (
               <Chip
-                label={`${chore.clam_value} 🥟`}
+                label={`${chore.currency_value || chore.clam_value || 0} ${currencyEmoji}`}
                 size="small"
                 sx={{ bgcolor: 'var(--accent)', color: 'var(--text)' }}
               />
@@ -741,7 +792,7 @@ const ChoreWidget = ({ transparentBackground }) => {
           backgroundPosition: 'bottom'
         }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">🥟 Daily Chores</Typography>
+          <Typography variant="h6">{currencyEmoji} Daily Chores</Typography>
           <Box sx={{ display: 'flex', gap: 1.5 }}> {/* Increased from gap: 1 */}
             <Button
               onClick={() => setShowBonusChores(!showBonusChores)}
@@ -763,7 +814,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               }}
               title={showBonusChores ? "Hide Bonus Chores" : "Show Bonus Chores"}
             >
-              🥟
+              {currencyEmoji}
             </Button>
             <Button
               startIcon={<Add />}
@@ -826,8 +877,8 @@ const ChoreWidget = ({ transparentBackground }) => {
             }}>
             {users.filter(user => user.id !== 0).map(user => {
               const userChores = getUserChores(user.id, currentDay);
-              const completedChores = userChores.filter(c => c.completed && c.clam_value === 0).length;
-              const totalRegularChores = userChores.filter(c => c.clam_value === 0).length;
+              const completedChores = userChores.filter(c => c.completed && (c.currency_value || c.clam_value || 0) === 0).length;
+              const totalRegularChores = userChores.filter(c => (c.currency_value || c.clam_value || 0) === 0).length;
               const allRegularChoresCompleted = totalRegularChores > 0 && completedChores === totalRegularChores;
 
               return (
@@ -851,9 +902,9 @@ const ChoreWidget = ({ transparentBackground }) => {
                     <Typography variant="subtitle1" sx={{ mt: 1, fontSize: '0.9rem', fontWeight: 'bold' }}>
                       {user.username}
                     </Typography>
-                    {allRegularChoresCompleted && (
+                    {allRegularChoresCompleted && dailyChoresCompletionBonus > 0 && (
                       <Chip
-                        label="All Done! +2 🥟"
+                        label={`All Done! +${dailyChoresCompletionBonus} ${currencyEmoji}`}
                         color="success"
                         size="small"
                         sx={{ mt: 1 }}
@@ -896,7 +947,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                 fontSize: '0.9rem', 
                 fontWeight: 'bold' 
               }}>
-                🥟 Bonus Chores
+                {currencyEmoji} Bonus Chores
               </Typography>
               
               {availableBonusChores.length === 0 ? (
@@ -946,7 +997,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                           {chore.title}
                         </Typography>
                         <Chip
-                          label={`${chore.clam_value} 🥟`}
+                          label={`${chore.currency_value || chore.clam_value || 0} ${currencyEmoji}`}
                           size="small"
                           sx={{ 
                             bgcolor: 'var(--accent)', 
@@ -1048,7 +1099,8 @@ const ChoreWidget = ({ transparentBackground }) => {
                     }}>
                       {users.filter(user => user.id !== 0).map(user => {
                         const affordableCount = getAffordablePrizes(user.id).length;
-                        const canPurchase = getAffordablePrizes(user.id).length > 0 && user.clam_total >= prizeMinimumShells;
+                        const userCurrency = user.currency_total || user.clam_total || 0;
+                        const canPurchase = getAffordablePrizes(user.id).length > 0 && userCurrency >= prizeMinimumCurrency;
                         const isSelected = selectedUserForPrize === user.id;
                         
                         // Render smaller avatar for prize spinner
@@ -1165,7 +1217,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                               {user.username}
                             </Typography>
                             <Chip
-                              label={`${user.clam_total || 0} 🥟`}
+                              label={`${user.currency_total || user.clam_total || 0} ${currencyEmoji}`}
                               size="small"
                               sx={{
                                 mt: 0.5,
@@ -1186,7 +1238,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                                   maxWidth: 80
                                 }}
                               >
-                                {affordableCount === 0 ? 'No prizes' : `Need ${prizeMinimumShells}`}
+                                {affordableCount === 0 ? 'No prizes' : `Need ${prizeMinimumCurrency}`}
                               </Typography>
                             )}
                           </Box>
@@ -1305,9 +1357,9 @@ const ChoreWidget = ({ transparentBackground }) => {
             <TextField
               fullWidth
               type="number"
-              label="🥟 Clam Value (0 for regular chore)"
-              value={newChore.clam_value}
-              onChange={(e) => setNewChore({...newChore, clam_value: parseInt(e.target.value) || 0})}
+              label={`${currencyEmoji} ${currencyName} Value (0 for regular chore)`}
+              value={newChore.currency_value}
+              onChange={(e) => setNewChore({...newChore, currency_value: parseInt(e.target.value) || 0})}
             />
           </DialogContent>
           <DialogActions>
@@ -1339,7 +1391,7 @@ const ChoreWidget = ({ transparentBackground }) => {
           <DialogTitle sx={{ color: 'var(--text)' }}>Add New Bonus Chore</DialogTitle>
           <DialogContent sx={{ color: 'var(--text)' }}>
             <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic', color: 'var(--text-secondary)' }}>
-              Bonus chores are available 7 days a week and will be awarded {bonusChoreClamValue} 🥟 when completed.
+              Bonus chores are available 7 days a week and will be awarded {bonusChoreCurrencyValue} {currencyEmoji} when completed.
             </Typography>
             <TextField
               fullWidth
@@ -1369,7 +1421,7 @@ const ChoreWidget = ({ transparentBackground }) => {
               </Select>
             </FormControl>
             <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Clam Value: {bonusChoreClamValue} 🥟 (configured in Admin Panel)
+              {currencyName} Value: {bonusChoreCurrencyValue} {currencyEmoji} (configured in Admin Panel)
             </Typography>
           </DialogContent>
           <DialogActions>
@@ -1460,7 +1512,7 @@ const ChoreWidget = ({ transparentBackground }) => {
             </Typography>
             {selectedUserForPrize && (
               <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                {users.find(u => u.id === selectedUserForPrize)?.username} - {users.find(u => u.id === selectedUserForPrize)?.clam_total || 0} 🥟
+                {users.find(u => u.id === selectedUserForPrize)?.username} - {users.find(u => u.id === selectedUserForPrize)?.currency_total || users.find(u => u.id === selectedUserForPrize)?.clam_total || 0} {currencyEmoji}
               </Typography>
             )}
           </DialogTitle>
@@ -1532,7 +1584,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                           {prize.name}
                         </Typography>
                         <Chip
-                          label={`${prize.clam_cost} 🥟`}
+                          label={`${prize.currency_cost !== undefined ? prize.currency_cost : (prize.clam_cost || 0)} ${currencyEmoji}`}
                           size="small"
                           sx={{
                             bgcolor: canPurchase ? 'var(--accent)' : 'var(--card-border)',
@@ -1646,7 +1698,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                   {purchasedPrize.name}
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                  Purchased for {purchasedPrize.clam_cost} 🥟
+                  Purchased for {purchasedPrize.currency_cost !== undefined ? purchasedPrize.currency_cost : (purchasedPrize.clam_cost || 0)} {currencyEmoji}
                 </Typography>
               </>
             )}
@@ -1723,7 +1775,7 @@ const ChoreWidget = ({ transparentBackground }) => {
                   },
                 }}
               >
-                🥟
+                {currencyEmoji}
               </Box>
             ))}
           </Box>
